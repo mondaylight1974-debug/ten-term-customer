@@ -1,125 +1,104 @@
-require("dotenv").config();
-const express = require("express");
-const session = require("express-session");
-const helmet = require("helmet");
-const bcrypt = require("bcryptjs");
-const Database = require("better-sqlite3");
-const path = require("path");
-const crypto = require("crypto");
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-const db = new Database(process.env.DB_PATH || path.join(__dirname, "..", "data", "ten-term.sqlite"));
-db.pragma("journal_mode = WAL");
-db.exec(`
-CREATE TABLE IF NOT EXISTS customers (
- id INTEGER PRIMARY KEY AUTOINCREMENT,
- account_id TEXT UNIQUE NOT NULL,
- full_name TEXT NOT NULL,
- email TEXT UNIQUE NOT NULL,
- phone TEXT NOT NULL,
- password_hash TEXT NOT NULL,
- paystack_customer_code TEXT,
- dva_account_number TEXT,
- dva_bank_name TEXT,
- dva_account_name TEXT,
- withdrawal_bank_name TEXT,
- withdrawal_account_number TEXT,
- withdrawal_account_name TEXT,
- referral_code TEXT UNIQUE,
- referred_by TEXT,
- created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS deposits (
- id INTEGER PRIMARY KEY AUTOINCREMENT,
- customer_id INTEGER NOT NULL,
- amount_kobo INTEGER NOT NULL,
- provider_reference TEXT UNIQUE,
- status TEXT NOT NULL DEFAULT 'pending',
- created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
- FOREIGN KEY(customer_id) REFERENCES customers(id)
-);
-CREATE TABLE IF NOT EXISTS withdrawals (
- id INTEGER PRIMARY KEY AUTOINCREMENT,
- customer_id INTEGER NOT NULL,
- amount_kobo INTEGER NOT NULL,
- bank_name TEXT NOT NULL,
- account_number TEXT NOT NULL,
- account_name TEXT NOT NULL,
- status TEXT NOT NULL DEFAULT 'pending',
- created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
- FOREIGN KEY(customer_id) REFERENCES customers(id)
-);
-CREATE TABLE IF NOT EXISTS webhook_events (
- id INTEGER PRIMARY KEY AUTOINCREMENT,
- event_key TEXT UNIQUE NOT NULL,
- event TEXT NOT NULL,
- received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-`);
-function addColumn(sql){try{db.exec(sql)}catch(e){if(!String(e.message).includes("duplicate column")) throw e}}
-addColumn("ALTER TABLE customers ADD COLUMN phone TEXT NOT NULL DEFAULT ''");
-addColumn("ALTER TABLE customers ADD COLUMN paystack_customer_code TEXT");
-addColumn("ALTER TABLE customers ADD COLUMN dva_account_number TEXT");
-addColumn("ALTER TABLE customers ADD COLUMN dva_bank_name TEXT");
-addColumn("ALTER TABLE customers ADD COLUMN dva_account_name TEXT");
-addColumn("ALTER TABLE customers ADD COLUMN withdrawal_bank_name TEXT");
-addColumn("ALTER TABLE customers ADD COLUMN withdrawal_account_number TEXT");
-addColumn("ALTER TABLE customers ADD COLUMN withdrawal_account_name TEXT");
-addColumn("ALTER TABLE customers ADD COLUMN referral_code TEXT");
-addColumn("ALTER TABLE customers ADD COLUMN referred_by TEXT");
-
-const insertCustomer = db.prepare(`INSERT INTO customers (account_id, full_name, email, phone, password_hash, referral_code, referred_by) VALUES (?, ?, ?, ?, ?, ?, ?)`);
-const findByEmail = db.prepare("SELECT * FROM customers WHERE email = ?");
-const findById = db.prepare("SELECT * FROM customers WHERE id = ?");
-const money = n => (n / 100).toLocaleString("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 2 });
-const PLAN_AMOUNTS = [1500,2500,3500,10000,15000,3500];
-const REFERRAL_REWARD_KOBO = 1000 * 100;
-
-app.use(helmet({ contentSecurityPolicy: false }));
-app.post("/api/paystack/webhook", express.raw({ type: "application/json", limit: "200kb" }), handlePaystackWebhook);
-app.use(express.json({ limit: "30kb" }));
-app.use(session({
- name: "ten_term_customer",
- secret: process.env.SESSION_SECRET || "development-only-change-this-secret",
- resave:false, saveUninitialized:false,
- cookie:{httpOnly:true,sameSite:"lax",secure:process.env.NODE_ENV === "production",maxAge:1000*60*60*8}
-}));
-app.use(express.static(path.join(__dirname,"..","public")));
-
-function requireAuth(req,res,next){if(!req.session.customerId)return res.status(401).json({error:"Please log in to continue."});next()}
-function newAccountId(){for(let i=0;i<12;i++){const id="TT-"+crypto.randomInt(10000000,99999999);if(!db.prepare("SELECT 1 FROM customers WHERE account_id=?").get(id))return id}throw new Error("Could not allocate a unique account ID.")}
-function referralCode(){for(let i=0;i<12;i++){const c="TTREF-"+crypto.randomBytes(4).toString("hex").toUpperCase();if(!db.prepare("SELECT 1 FROM customers WHERE referral_code=?").get(c))return c}throw new Error("Could not allocate referral code.")}
-function splitName(full){const p=full.trim().split(/\s+/);return {firstName:p[0],lastName:p.slice(1).join(" ")||p[0]}}
-function normalizePhone(p){let x=String(p||"").replace(/[^0-9+]/g,"");if(/^0\d{10}$/.test(x))x="+234"+x.slice(1);if(/^234\d{10}$/.test(x))x="+"+x;return x}
-async function paystack(pathname,options={}){
- const key=process.env.PAYSTACK_SECRET_KEY;
- if(!key)throw new Error("PAYSTACK_SECRET_KEY is not configured on the server.");
- const r=await fetch("https://api.paystack.co"+pathname,{...options,headers:{Authorization:`Bearer ${key}`,"Content-Type":"application/json",...(options.headers||{})}});
- const data=await r.json().catch(()=>({}));
- if(!r.ok || data.status===false) throw new Error(data.message||`Paystack request failed (${r.status}).`);
- return data;
+'use strict';
+require('dotenv').config();
+const express=require('express'),session=require('express-session'),helmet=require('helmet'),bcrypt=require('bcryptjs'),crypto=require('crypto'),path=require('path');
+const {rateLimit}=require('express-rate-limit');
+const app=express(),PORT=process.env.PORT||3000;
+const URL=(process.env.SUPABASE_URL||'').replace(/\/$/,''),KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SECRET=process.env.SESSION_SECRET,APP_URL=(process.env.PUBLIC_APP_URL||'').replace(/\/$/,'');
+const PAY_KEY=process.env.PAYSTACK_SECRET_KEY,PAY_ON=process.env.PAYSTACK_ENABLED==='true';
+const ADMIN=String(process.env.ADMIN_EMAIL||'').trim().toLowerCase(),ADMIN_HASH=process.env.ADMIN_PASSWORD_HASH||'';
+if(!SECRET||SECRET.length<32){console.error('Set SESSION_SECRET to at least 32 random characters.');process.exit(1);}
+const ready=!!(URL&&KEY);
+async function db(pathname,method='GET',body,headers={}){
+ if(!ready)throw Error('Database is not configured.');
+ const r=await fetch(URL+'/rest/v1/'+pathname,{method,headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});
+ const raw=await r.text();let d=null;try{d=raw?JSON.parse(raw):null}catch{d=raw;}
+ if(!r.ok)throw Error((d&&(d.message||d.hint))||('Database error '+r.status));return d;
 }
-async function createPaystackCustomer(c){
- const {firstName,lastName}=splitName(c.full_name);
- const data=await paystack("/customer",{method:"POST",body:JSON.stringify({email:c.email,first_name:firstName,last_name:lastName,phone:c.phone,metadata:{ten_term_id:c.account_id}})});
- return data.data;
+class Store extends session.Store{
+ get(id,cb){db('sessions?sid=eq.'+encodeURIComponent(id)+'&select=sess,expire').then(a=>{const x=a&&a[0];cb(null,!x||new Date(x.expire)<=new Date()?null:x.sess)}).catch(cb)}
+ set(id,s,cb=()=>{}){const exp=s.cookie&&s.cookie.expires||new Date(Date.now()+28800000);db('sessions?on_conflict=sid','POST',{sid:id,sess:s,expire:new Date(exp).toISOString()},{Prefer:'resolution=merge-duplicates,return=minimal'}).then(()=>cb()).catch(cb)}
+ touch(id,s,cb=()=>{}){const exp=s.cookie&&s.cookie.expires||new Date(Date.now()+28800000);db('sessions?sid=eq.'+encodeURIComponent(id),'PATCH',{expire:new Date(exp).toISOString()},{Prefer:'return=minimal'}).then(()=>cb()).catch(cb)}
+ destroy(id,cb=()=>{}){db('sessions?sid=eq.'+encodeURIComponent(id),'DELETE',undefined,{Prefer:'return=minimal'}).then(()=>cb()).catch(cb)}
 }
-async function assignDva(c){
- const customerCode=c.paystack_customer_code;
- const preferred=process.env.PAYSTACK_PREFERRED_BANK || "titan-paystack";
- return paystack("/dedicated_account",{method:"POST",body:JSON.stringify({customer:customerCode,preferred_bank:preferred,first_name:splitName(c.full_name).firstName,last_name:splitName(c.full_name).lastName,phone:c.phone})});
+app.set('trust proxy',1);app.use(helmet({contentSecurityPolicy:false}));
+app.use((req,res,next)=>{if(['POST','PUT','PATCH','DELETE'].includes(req.method)&&req.path!='/api/paystack/webhook'){const o=req.get('origin');if(o){try{if(new URL(o).host!==req.get('host'))return res.status(403).json({error:'Request origin is not allowed.'})}catch{return res.status(403).json({error:'Invalid request origin.'})}}}next()});
+app.post('/api/paystack/webhook',express.raw({type:'application/json',limit:'200kb'}),webhook);
+app.use(express.json({limit:'30kb'}));
+app.use(session({name:'ten_term.sid',secret:SECRET,store:new Store(),resave:false,saveUninitialized:false,rolling:true,cookie:{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:28800000}}));
+app.use(express.static(path.join(__dirname,'public'),{index:false}));
+const limiter=rateLimit({windowMs:900000,limit:10,standardHeaders:'draft-7',legacyHeaders:false,message:{error:'Too many attempts. Wait and try again.'}});
+const writes=rateLimit({windowMs:60000,limit:25,standardHeaders:'draft-7',legacyHeaders:false});
+const dbReady=(q,s,n)=>ready?n():s.status(503).json({error:'Ten Term database is not configured yet.'});
+const auth=(q,s,n)=>q.session&&q.session.customerId?n():s.status(401).json({error:'Please log in to continue.'});
+const admin=(q,s,n)=>q.session&&q.session.adminAuthenticated===true?n():s.status(401).json({error:'Admin login required.'});
+const money=n=>'₦'+(Number(n||0)/100).toLocaleString('en-NG',{minimumFractionDigits:2,maximumFractionDigits:2});
+const phone=v=>{let p=String(v||'').replace(/[^0-9+]/g,'');if(/^0\d{10}$/.test(p))p='+234'+p.slice(1);if(/^234\d{10}$/.test(p))p='+'+p;return p};
+const randomId=()=> 'TT-'+crypto.randomInt(10000000,99999999);
+const refCode=()=> 'TTREF-'+crypto.randomBytes(4).toString('hex').toUpperCase();
+const names=n=>{const a=n.trim().split(/\s+/);return {first_name:a[0],last_name:a.slice(1).join(' ')||a[0]}};
+async function pay(pathname,body){if(!PAY_KEY)throw Error('Paystack is not configured.');const r=await fetch('https://api.paystack.co'+pathname,{method:'POST',headers:{Authorization:'Bearer '+PAY_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(!r.ok||d.status===false)throw Error(d.message||'Paystack request failed.');return d.data;}
+async function customer(id){const a=await db('customers?id=eq.'+encodeURIComponent(id)+'&select=id,account_id,full_name,email,phone,referral_code,dva_account_number,dva_bank_name,dva_account_name,withdrawal_bank_name,withdrawal_account_number,withdrawal_account_name,created_at');return a&&a[0];}
+function safeCustomer(c){return {id:c.id,account_id:c.account_id,full_name:c.full_name,email:c.email,phone:c.phone,referral_code:c.referral_code,referral_link:APP_URL+'/?ref='+encodeURIComponent(c.referral_code),dva:c.dva_account_number?{account_number:c.dva_account_number,bank_name:c.dva_bank_name,account_name:c.dva_account_name}:null,withdrawal:{bank_name:c.withdrawal_bank_name||'',account_number:c.withdrawal_account_number||'',account_name:c.withdrawal_account_name||''},created_at:c.created_at};}
+async function dashboard(id){
+ const c=await customer(id);if(!c)throw Error('Customer not found.');
+ const [ds,ws,ls,ts]=await Promise.all([
+ db('deposits?customer_id=eq.'+id+'&select=id,amount_kobo,status,provider_reference,created_at&order=created_at.desc&limit=20'),
+ db('withdrawals?customer_id=eq.'+id+'&select=id,amount_kobo,status,bank_name,account_number,account_name,created_at&order=created_at.desc&limit=20'),
+ db('wallet_ledger?customer_id=eq.'+id+'&select=amount_kobo'),
+ db('tasks?is_active=eq.true&select=id,title,description,reward_kobo&order=id.asc')
+ ]);
+ const bal=(ls||[]).reduce((n,x)=>n+Number(x.amount_kobo),0);
+ return {customer:safeCustomer(c),balance:money(bal),balance_kobo:bal,referral_reward:1000,deposits:(ds||[]).map(x=>({...x,amount:money(x.amount_kobo)})),withdrawals:(ws||[]).map(x=>({...x,amount:money(x.amount_kobo)})),tasks:(ts||[]).map(x=>({...x,reward:money(x.reward_kobo)})),funding_enabled:PAY_ON&&!!c.dva_account_number};
 }
-function publicCustomer(c){return {id:c.id,account_id:c.account_id,full_name:c.full_name,email:c.email,phone:c.phone,referral_code:c.referral_code,referral_link:`${process.env.PUBLIC_APP_URL||""}/?ref=${encodeURIComponent(c.referral_code)}`,dva:c.dva_account_number?{account_number:c.dva_account_number,bank_name:c.dva_bank_name,account_name:c.dva_account_name}:null,withdrawal:{bank_name:c.withdrawal_bank_name||"",account_number:c.withdrawal_account_number||"",account_name:c.withdrawal_account_name||""},created_at:c.created_at}}
-function dashboard(){const c=findById.get(this.customerId);const deposits=db.prepare("SELECT id,amount_kobo,status,provider_reference,created_at FROM deposits WHERE customer_id=? ORDER BY id DESC LIMIT 20").all(c.id);const withdrawals=db.prepare("SELECT id,amount_kobo,status,bank_name,account_number,account_name,created_at FROM withdrawals WHERE customer_id=? ORDER BY id DESC LIMIT 20").all(c.id);return {customer:publicCustomer(c),plans:PLAN_AMOUNTS.map((amount,i)=>({id:i+1,amount, label:`Plan ${i+1}`})),referral_reward:1000,deposits:deposits.map(d=>({...d,amount:money(d.amount_kobo)})),withdrawals:withdrawals.map(w=>({...w,amount:money(w.amount_kobo)}))}}
-app.get("/api/health",(req,res)=>res.json({ok:true,service:"ten-term-customer",payment_provider:"paystack"}));
-app.post("/api/register",async(req,res)=>{try{const fullName=String(req.body.fullName||"").trim();const email=String(req.body.email||"").trim().toLowerCase();const password=String(req.body.password||"");const phone=normalizePhone(req.body.phone);const referredBy=String(req.body.ref||req.body.referredBy||"").trim();if(fullName.length<2||fullName.length>80)return res.status(400).json({error:"Enter your full name."});if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({error:"Enter a valid email address."});if(!/^\+234\d{10}$/.test(phone))return res.status(400).json({error:"Enter a valid Nigerian phone number."});if(password.length<8)return res.status(400).json({error:"Password must be at least 8 characters."});if(findByEmail.get(email))return res.status(409).json({error:"An account with this email already exists."});const accountId=newAccountId();const hash=await bcrypt.hash(password,12);const result=insertCustomer.run(accountId,fullName,email,phone,hash,referralCode(),referredBy||null);req.session.customerId=Number(result.lastInsertRowid);const c=findById.get(req.session.customerId);try{const pc=await createPaystackCustomer(c);db.prepare("UPDATE customers SET paystack_customer_code=? WHERE id=?").run(pc.customer_code,c.id);const updated=findById.get(c.id);const dva=await assignDva(updated);if(dva.data?.account_number){db.prepare("UPDATE customers SET dva_account_number=?,dva_bank_name=?,dva_account_name=? WHERE id=?").run(dva.data.account_number,dva.data.bank?.name||"",dva.data.account_name||"",c.id)}}catch(e){console.error("Paystack provisioning:",e.message)}res.json({customer:publicCustomer(findById.get(c.id)),paystack_status:findById.get(c.id).dva_account_number?"ready":"pending"})}catch(e){console.error(e);res.status(500).json({error:"Registration could not be completed. Please try again."})}});
-app.post("/api/login",async(req,res)=>{const email=String(req.body.email||"").trim().toLowerCase();const password=String(req.body.password||"");const c=findByEmail.get(email);if(!c||!(await bcrypt.compare(password,c.password_hash)))return res.status(401).json({error:"Email or password is incorrect."});req.session.customerId=c.id;res.json({customer:publicCustomer(c)})});
-app.post("/api/logout",(req,res)=>req.session.destroy(()=>res.json({ok:true})));
-app.get("/api/me",requireAuth,(req,res)=>{try{res.json(dashboard.call({customerId:req.session.customerId}))}catch(e){console.error(e);res.status(500).json({error:"Could not load your dashboard."})}});
-app.post("/api/profile/withdrawal",requireAuth,(req,res)=>{const bank=String(req.body.bankName||"").trim();const number=String(req.body.accountNumber||"").replace(/\D/g,"");const name=String(req.body.accountName||"").trim();if(!bank||!/^[0-9]{10}$/.test(number)||name.length<2)return res.status(400).json({error:"Enter a valid bank name, 10-digit account number and account name."});db.prepare("UPDATE customers SET withdrawal_bank_name=?,withdrawal_account_number=?,withdrawal_account_name=? WHERE id=?").run(bank,number,name,req.session.customerId);res.json({ok:true,message:"Withdrawal account saved securely."})});
-app.post("/api/withdrawals",requireAuth,(req,res)=>{const amount=Number(req.body.amount);const bank=String(req.body.bankName||"").trim();const number=String(req.body.accountNumber||"").replace(/\D/g,"");const name=String(req.body.accountName||"").trim();if(!Number.isFinite(amount)||amount<1000)return res.status(400).json({error:"Minimum withdrawal request is ₦1,000."});if(!bank||!/^[0-9]{10}$/.test(number)||name.length<2)return res.status(400).json({error:"Save valid withdrawal bank details first."});const month=new Date().getMonth();const year=new Date().getFullYear();const count=db.prepare("SELECT COUNT(*) c FROM withdrawals WHERE customer_id=? AND status='pending' AND strftime('%m',created_at)=? AND strftime('%Y',created_at)=?").get(req.session.customerId,String(month+1).padStart(2,"0"),String(year)).c;if(count>0)return res.status(409).json({error:"You already have a pending withdrawal this month."});db.prepare("INSERT INTO withdrawals(customer_id,amount_kobo,bank_name,account_number,account_name,status) VALUES(?,?,?,?,?,'pending')").run(req.session.customerId,Math.round(amount*100),bank,number,name);res.json({ok:true,message:"Withdrawal request submitted for admin review. Payments are made manually by Ten Term."})});
-app.get("/api/transactions",requireAuth,(req,res)=>{const rows=db.prepare("SELECT id,amount_kobo,status,created_at FROM deposits WHERE customer_id=? ORDER BY id DESC").all(req.session.customerId);res.json(rows.map(r=>({...r,amount:money(r.amount_kobo)})))});
-async function handlePaystackWebhook(req,res){const raw=req.body;const signature=req.headers["x-paystack-signature"];const secret=process.env.PAYSTACK_SECRET_KEY;if(!secret||!signature)return res.status(401).send("Unauthorized");const hash=crypto.createHmac("sha512",secret).update(raw).digest("hex");if(!crypto.timingSafeEqual(Buffer.from(hash),Buffer.from(String(signature))))return res.status(401).send("Invalid signature");let event;try{event=JSON.parse(raw.toString("utf8"))}catch{return res.status(400).send("Bad JSON")};const eventKey=String(event.data?.id||event.data?.reference||crypto.createHash("sha256").update(raw).digest("hex"));if(db.prepare("SELECT 1 FROM webhook_events WHERE event_key=?").get(eventKey))return res.status(200).send("OK");db.prepare("INSERT INTO webhook_events(event_key,event) VALUES(?,?)").run(eventKey,event.event||"unknown");if(event.event==="charge.success"){const d=event.data||{};const email=d.customer?.email||d.metadata?.email;const accountNumber=d.authorization?.receiver_bank_account_number||d.dedicated_account?.account_number||d.metadata?.account_number;const c=email?findByEmail.get(String(email).toLowerCase()):accountNumber?db.prepare("SELECT * FROM customers WHERE dva_account_number=?").get(accountNumber):null;if(c){const reference=String(d.reference||d.id||eventKey);const existing=db.prepare("SELECT id FROM deposits WHERE provider_reference=?").get(reference);if(!existing){db.prepare("INSERT INTO deposits(customer_id,amount_kobo,provider_reference,status) VALUES(?,?,?,'successful')").run(c.id,Number(d.amount||0),reference)}}}return res.status(200).send("OK")}
-app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"..","public","index.html")));
-app.listen(PORT,()=>console.log(`Ten Term customer portal listening on ${PORT}`));
+app.get('/api/health',async(q,s)=>{if(!ready)return s.status(503).json({ok:false,database:'not_configured'});try{await db('customers?select=id&limit=1');s.json({ok:true,service:'ten-term',database:'connected',payments_enabled:PAY_ON})}catch(e){s.status(503).json({ok:false,database:'unavailable'})}});
+app.post('/api/register',dbReady,limiter,async(q,s)=>{
+ try{
+ const full=String(q.body.fullName||'').trim(),email=String(q.body.email||'').trim().toLowerCase(),pass=String(q.body.password||''),tel=phone(q.body.phone);
+ if(full.length<2||full.length>80)return s.status(400).json({error:'Enter your full name.'});
+ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return s.status(400).json({error:'Enter a valid email address.'});
+ if(!/^\+234\d{10}$/.test(tel))return s.status(400).json({error:'Enter a valid Nigerian phone number.'});
+ if(pass.length<10)return s.status(400).json({error:'Password must contain at least 10 characters.'});
+ const hash=await bcrypt.hash(pass,12),rows=await db('customers','POST',{account_id:randomId(),full_name:full,email,phone:tel,password_hash:hash,referral_code:refCode(),referred_by:String(q.body.ref||'').trim().toUpperCase()||null},{Prefer:'return=representation'});
+ const c=rows&&rows[0];if(!c)return s.status(409).json({error:'Could not create this account. The email may already be registered.'});
+ await new Promise((ok,no)=>q.session.regenerate(e=>e?no(e):ok()));q.session.customerId=c.id;
+ let status='disabled';
+ if(PAY_ON&&PAY_KEY){try{const pc=await pay('/customer',{email,...names(full),phone:tel,metadata:{ten_term_id:c.account_id}});await db('customers?id=eq.'+c.id,'PATCH',{paystack_customer_code:pc.customer_code},{Prefer:'return=minimal'});const dva=await pay('/dedicated_account',{customer:pc.customer_code,preferred_bank:process.env.PAYSTACK_PREFERRED_BANK||'titan-paystack',...names(full),phone:tel});if(dva&&dva.account_number)await db('customers?id=eq.'+c.id,'PATCH',{dva_account_number:dva.account_number,dva_bank_name:dva.bank&&dva.bank.name||'',dva_account_name:dva.account_name||''},{Prefer:'return=minimal'});status='ready'}catch(e){console.error('DVA provisioning:',e.message);status='pending'}}
+ s.status(201).json({customer:safeCustomer(await customer(c.id)),paystack_status:status});
+ }catch(e){console.error('Registration:',e.message);s.status(e.message&&e.message.includes('duplicate')?409:500).json({error:e.message&&e.message.includes('duplicate')?'This email is already registered.':'Registration could not be completed.'})}
+});
+app.post('/api/login',dbReady,limiter,async(q,s)=>{try{const a=await db('customers?email=eq.'+encodeURIComponent(String(q.body.email||'').trim().toLowerCase())+'&select=id,password_hash&limit=1'),c=a&&a[0];if(!c||!(await bcrypt.compare(String(q.body.password||''),c.password_hash)))return s.status(401).json({error:'Email or password is incorrect.'});await new Promise((ok,no)=>q.session.regenerate(e=>e?no(e):ok()));q.session.customerId=c.id;s.json({ok:true})}catch(e){console.error('Login:',e.message);s.status(500).json({error:'Login could not be completed.'})}});
+app.post('/api/logout',(q,s)=>q.session.destroy(e=>{if(e)return s.status(500).json({error:'Could not log out.'});s.clearCookie('ten_term.sid');s.json({ok:true})}));
+app.get('/api/me',dbReady,auth,async(q,s)=>{try{s.json(await dashboard(q.session.customerId))}catch(e){console.error('Dashboard:',e.message);s.status(500).json({error:'Could not load your dashboard.'})}});
+app.post('/api/profile/withdrawal',dbReady,auth,writes,async(q,s)=>{const bank=String(q.body.bankName||'').trim(),num=String(q.body.accountNumber||'').replace(/\D/g,''),name=String(q.body.accountName||'').trim();if(!bank||!/^\d{10}$/.test(num)||name.length<2)return s.status(400).json({error:'Enter valid bank details.'});try{await db('customers?id=eq.'+q.session.customerId,'PATCH',{withdrawal_bank_name:bank,withdrawal_account_number:num,withdrawal_account_name:name},{Prefer:'return=minimal'});s.json({ok:true,message:'Bank details saved securely.'})}catch(e){s.status(500).json({error:'Could not save bank details.'})}});
+app.post('/api/withdrawals',dbReady,auth,writes,async(q,s)=>{try{const amount=Number(q.body.amount),bank=String(q.body.bankName||''),num=String(q.body.accountNumber||'').replace(/\D/g,''),name=String(q.body.accountName||'');if(!Number.isSafeInteger(Math.round(amount*100))||amount<1000)return s.status(400).json({error:'Minimum withdrawal request is ₦1,000.'});const r=await db('rpc/request_withdrawal','POST',{p_customer_id:q.session.customerId,p_amount_kobo:Math.round(amount*100),p_bank_name:bank,p_account_number:num,p_account_name:name});s.status(201).json({ok:true,message:'Withdrawal request submitted. The amount is reserved from your wallet.',withdrawal:r})}catch(e){const m=e.message||'';if(/insufficient wallet balance/i.test(m))return s.status(400).json({error:'Your wallet balance is not enough.'});if(/pending withdrawal/i.test(m))return s.status(409).json({error:'You already have a pending withdrawal this month.'});if(/invalid withdrawal/i.test(m))return s.status(400).json({error:'Check your bank details and withdrawal amount.'});console.error('Withdrawal:',m);s.status(500).json({error:'Could not submit withdrawal request.'})}});
+async function webhook(q,s){
+ try{
+ if(!PAY_ON||!PAY_KEY)return s.status(503).send('Payments disabled');
+ const raw=q.body,sig=q.get('x-paystack-signature');if(!Buffer.isBuffer(raw)||!sig)return s.status(401).send('Unauthorized');
+ const expected=crypto.createHmac('sha512',PAY_KEY).update(raw).digest('hex'),a=Buffer.from(expected),b=Buffer.from(sig);if(a.length!==b.length||!crypto.timingSafeEqual(a,b))return s.status(401).send('Invalid signature');
+ const event=JSON.parse(raw.toString('utf8')),d=event.data||{},key=(event.event||'unknown')+':'+(d.id||d.reference||crypto.createHash('sha256').update(raw).digest('hex'));
+ const old=await db('webhook_events?event_key=eq.'+encodeURIComponent(key)+'&select=id,processed_at&limit=1');if(old&&old[0]&&old[0].processed_at)return s.send('OK');
+ if(!old||!old[0])await db('webhook_events','POST',{event_key:key,event_type:String(event.event||'unknown'),payload:event},{Prefer:'return=minimal'});
+ if(event.event==='charge.success'){
+ if(String(d.status||'').toLowerCase()!=='success'||String(d.currency||'NGN').toUpperCase()!=='NGN'||!Number.isSafeInteger(Number(d.amount))||Number(d.amount)<=0)return s.status(400).send('Invalid charge');
+ const code=d.customer&&d.customer.customer_code,acct=d.authorization&&d.authorization.receiver_bank_account_number||d.dedicated_account&&d.dedicated_account.account_number;let cs=[];
+ if(code)cs=await db('customers?paystack_customer_code=eq.'+encodeURIComponent(code)+'&select=id&limit=1');
+ if((!cs||!cs[0])&&acct)cs=await db('customers?dva_account_number=eq.'+encodeURIComponent(acct)+'&select=id&limit=1');
+ if(cs&&cs[0])await db('rpc/record_verified_deposit','POST',{p_customer_id:cs[0].id,p_amount_kobo:Number(d.amount),p_reference:String(d.reference||d.id),p_payload:d});
+ else console.warn('Verified Paystack charge not matched to a customer.');
+ }
+ await db('webhook_events?event_key=eq.'+encodeURIComponent(key),'PATCH',{processed_at:new Date().toISOString()},{Prefer:'return=minimal'});s.send('OK');
+ }catch(e){console.error('Paystack webhook:',e.message);s.status(500).send('Webhook processing failed')}
+}
+app.get('/admin',(q,s)=>s.sendFile(path.join(__dirname,'public','admin.html')));
+app.post('/api/admin/login',dbReady,limiter,async(q,s)=>{try{const email=String(q.body.email||'').trim().toLowerCase();if(!ADMIN||!ADMIN_HASH)return s.status(503).json({error:'Admin access is not configured.'});if(email!==ADMIN||!(await bcrypt.compare(String(q.body.password||''),ADMIN_HASH)))return s.status(401).json({error:'Admin email or password is incorrect.'});await new Promise((ok,no)=>q.session.regenerate(e=>e?no(e):ok()));q.session.adminAuthenticated=true;q.session.adminEmail=ADMIN;s.json({ok:true})}catch(e){s.status(500).json({error:'Admin login failed.'})}});
+app.get('/api/admin/overview',dbReady,admin,async(q,s)=>{try{
+ const [cs,ws,ds,ls]=await Promise.all([db('customers?select=id,account_id,full_name,email,phone,created_at,dva_bank_name,dva_account_number&order=created_at.desc&limit=250'),db('withdrawals?select=id,customer_id,amount_kobo,bank_name,account_number,account_name,status,created_at,customers(full_name,account_id,email)&order=created_at.desc&limit=250'),db('deposits?select=id,amount_kobo,status&limit=10000'),db('wallet_ledger?select=customer_id,amount_kobo&limit=10000')]);
+ const bal={};(ls||[]).forEach(x=>bal[x.customer_id]=(bal[x.customer_id]||0)+Number(x.amount_kobo));const good=(ds||[]).filter(x=>x.status==='successful'),total=good.reduce((n,x)=>n+Number(x.amount_kobo),0);
+ s.json({customers:(cs||[]).map(c=>({...c,wallet_balance:money(bal[c.id]||0)})),withdrawals:(ws||[]).map(w=>({...w,...(w.customers||{}),amount:money(w.amount_kobo)})),stats:{customers:(cs||[]).length,deposits:good.length,deposit_total:money(total),pending_withdrawals:(ws||[]).filter(x=>x.status==='pending').length}});
+ }catch(e){console.error('Admin overview:',e.message);s.status(500).json({error:'Could not load admin overview.'})}});
+app.post('/api/admin/withdrawals/:id/status',dbReady,admin,writes,async(q,s)=>{try{const id=Number(q.params.id),status=String(q.body.status||'');if(!Number.isSafeInteger(id)||id<1||!['paid','rejected'].includes(status))return s.status(400).json({error:'Invalid withdrawal update.'});await db('rpc/review_withdrawal','POST',{p_withdrawal_id:id,p_status:status,p_admin_email:q.session.adminEmail,p_note:String(q.body.note||'').slice(0,500)||null});s.json({ok:true})}catch(e){console.error('Review withdrawal:',e.message);s.status(400).json({error:/pending withdrawal/i.test(e.message)?'Pending withdrawal not found.':'Could not update withdrawal.'})}});
+app.post('/api/admin/logout',admin,(q,s)=>q.session.destroy(e=>{if(e)return s.status(500).json({error:'Could not log out.'});s.clearCookie('ten_term.sid');s.json({ok:true})}));
+app.get('*',(q,s)=>s.sendFile(path.join(__dirname,'public','index.html')));
+app.listen(PORT,()=>console.log('Ten Term listening on '+PORT+'; database '+(ready?'configured':'not configured')+'; Paystack '+(PAY_ON?'enabled':'disabled')));
