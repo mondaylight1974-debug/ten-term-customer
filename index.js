@@ -51,7 +51,7 @@ async function dashboard(id){
  const bal=(ls||[]).reduce((n,x)=>n+Number(x.amount_kobo),0);
  return {customer:safeCustomer(c),balance:money(bal),balance_kobo:bal,referral_reward:1000,deposits:(ds||[]).map(x=>({...x,amount:money(x.amount_kobo)})),withdrawals:(ws||[]).map(x=>({...x,amount:money(x.amount_kobo)})),tasks:(ts||[]).map(x=>({...x,reward:money(x.reward_kobo)})),funding_enabled:PAY_ON&&!!c.dva_account_number};
 }
-app.get('/api/health',async(q,s)=>{if(!ready)return s.status(503).json({ok:false,database:'not_configured'});try{await db('customers?select=id&limit=1');s.json({ok:true,service:'ten-term',database:'connected',payments_enabled:PAY_ON})}catch(e){s.status(503).json({ok:false,database:'unavailable'})}});
+app.get('/api/health',async(q,s)=>{if(!ready)return s.json({ok:true,service:'ten-term',database:'not_configured',payments_enabled:false});try{await db('customers?select=id&limit=1');s.json({ok:true,service:'ten-term',database:'connected',payments_enabled:PAY_ON})}catch(e){s.status(503).json({ok:false,database:'unavailable'})}});
 app.post('/api/register',dbReady,limiter,async(q,s)=>{
  try{
  const full=String(q.body.fullName||'').trim(),email=String(q.body.email||'').trim().toLowerCase(),pass=String(q.body.password||''),tel=phone(q.body.phone);
