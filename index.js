@@ -38,6 +38,23 @@ const randomId=()=> 'TT-'+crypto.randomInt(10000000,99999999);
 const refCode=()=> 'TTREF-'+crypto.randomBytes(4).toString('hex').toUpperCase();
 const names=n=>{const a=n.trim().split(/\s+/);return {first_name:a[0],last_name:a.slice(1).join(' ')||a[0]}};
 async function pay(pathname,body){if(!PAY_KEY)throw Error('Paystack is not configured.');const r=await fetch('https://api.paystack.co'+pathname,{method:'POST',headers:{Authorization:'Bearer '+PAY_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(!r.ok||d.status===false)throw Error(d.message||'Paystack request failed.');return d.data;}
+async function payGet(pathname){if(!PAY_KEY)throw Error('Paystack is not configured.');const r=await fetch('https://api.paystack.co'+pathname,{headers:{Authorization:'Bearer '+PAY_KEY}});const d=await r.json().catch(()=>({}));if(!r.ok||d.status===false)throw Error(d.message||'Paystack request failed.');return d.data;}
+async function provisionDva(c){
+ if(!PAY_KEY)throw Error('Paystack secret key is not configured on the server.');
+ if(c.dva_account_number)return c;
+ let code=c.paystack_customer_code;
+ if(!code){
+  try{const existing=await payGet('/customer/'+encodeURIComponent(c.email));code=existing&&existing.customer_code;}
+  catch(e){if(!/not found|does not exist|could not be found|no customer/i.test(e.message))throw e;}
+  if(!code){const pc=await pay('/customer',{email:c.email,...names(c.full_name),phone:c.phone,metadata:{ten_term_id:c.account_id}});code=pc&&pc.customer_code;}
+  if(!code)throw Error('Paystack did not return a customer code.');
+  await db('customers?id=eq.'+encodeURIComponent(c.id),'PATCH',{paystack_customer_code:code},{Prefer:'return=minimal'});
+ }
+ const dva=await pay('/dedicated_account',{customer:code,preferred_bank:process.env.PAYSTACK_PREFERRED_BANK||'titan-paystack',...names(c.full_name),phone:c.phone});
+ if(!dva||!dva.account_number)throw Error('Paystack accepted the request but has not returned an account number yet. Check your Paystack DVA eligibility and assignment status.');
+ await db('customers?id=eq.'+encodeURIComponent(c.id),'PATCH',{dva_account_number:String(dva.account_number),dva_bank_name:dva.bank&&dva.bank.name||'',dva_account_name:dva.account_name||''},{Prefer:'return=minimal'});
+ return await customer(c.id);
+}
 async function customer(id){const a=await db('customers?id=eq.'+encodeURIComponent(id)+'&select=id,account_id,full_name,email,phone,referral_code,dva_account_number,dva_bank_name,dva_account_name,withdrawal_bank_name,withdrawal_account_number,withdrawal_account_name,created_at');return a&&a[0];}
 function safeCustomer(c){return {id:c.id,account_id:c.account_id,full_name:c.full_name,email:c.email,phone:c.phone,referral_code:c.referral_code,referral_link:APP_URL+'/?ref='+encodeURIComponent(c.referral_code),dva:c.dva_account_number?{account_number:c.dva_account_number,bank_name:c.dva_bank_name,account_name:c.dva_account_name}:null,withdrawal:{bank_name:c.withdrawal_bank_name||'',account_number:c.withdrawal_account_number||'',account_name:c.withdrawal_account_name||''},created_at:c.created_at};}
 async function dashboard(id){
@@ -62,14 +79,22 @@ app.post('/api/register',dbReady,limiter,async(q,s)=>{
  const hash=await bcrypt.hash(pass,12),rows=await db('customers','POST',{account_id:randomId(),full_name:full,email,phone:tel,password_hash:hash,referral_code:refCode(),referred_by:String(q.body.ref||'').trim().toUpperCase()||null},{Prefer:'return=representation'});
  const c=rows&&rows[0];if(!c)return s.status(409).json({error:'Could not create this account. The email may already be registered.'});
  await new Promise((ok,no)=>q.session.regenerate(e=>e?no(e):ok()));q.session.customerId=c.id;
- let status='disabled';
- if(PAY_ON&&PAY_KEY){try{const pc=await pay('/customer',{email,...names(full),phone:tel,metadata:{ten_term_id:c.account_id}});await db('customers?id=eq.'+c.id,'PATCH',{paystack_customer_code:pc.customer_code},{Prefer:'return=minimal'});const dva=await pay('/dedicated_account',{customer:pc.customer_code,preferred_bank:process.env.PAYSTACK_PREFERRED_BANK||'titan-paystack',...names(full),phone:tel});if(dva&&dva.account_number)await db('customers?id=eq.'+c.id,'PATCH',{dva_account_number:dva.account_number,dva_bank_name:dva.bank&&dva.bank.name||'',dva_account_name:dva.account_name||''},{Prefer:'return=minimal'});status='ready'}catch(e){console.error('DVA provisioning:',e.message);status='pending'}}
+ const status='consent_required';
  s.status(201).json({customer:safeCustomer(await customer(c.id)),paystack_status:status});
  }catch(e){console.error('Registration:',e.message);s.status(e.message&&e.message.includes('duplicate')?409:500).json({error:e.message&&e.message.includes('duplicate')?'This email is already registered.':'Registration could not be completed.'})}
 });
 app.post('/api/login',dbReady,limiter,async(q,s)=>{try{const a=await db('customers?email=eq.'+encodeURIComponent(String(q.body.email||'').trim().toLowerCase())+'&select=id,password_hash&limit=1'),c=a&&a[0];if(!c||!(await bcrypt.compare(String(q.body.password||''),c.password_hash)))return s.status(401).json({error:'Email or password is incorrect.'});await new Promise((ok,no)=>q.session.regenerate(e=>e?no(e):ok()));q.session.customerId=c.id;s.json({ok:true})}catch(e){console.error('Login:',e.message);s.status(500).json({error:'Login could not be completed.'})}});
 app.post('/api/logout',(q,s)=>q.session.destroy(e=>{if(e)return s.status(500).json({error:'Could not log out.'});s.clearCookie('ten_term.sid');s.json({ok:true})}));
 app.get('/api/me',dbReady,auth,async(q,s)=>{try{s.json(await dashboard(q.session.customerId))}catch(e){console.error('Dashboard:',e.message);s.status(500).json({error:'Could not load your dashboard.'})}});
+app.post('/api/funding-account/create',dbReady,auth,writes,async(q,s)=>{
+ try{
+  if(q.body.consent!==true)return s.status(400).json({error:'Please confirm consent before requesting a funding account.'});
+  const c=await customer(q.session.customerId);if(!c)return s.status(404).json({error:'Customer not found.'});
+  if(c.dva_account_number)return s.json({ok:true,customer:safeCustomer(c),message:'Your funding account is already active.'});
+  const updated=await provisionDva(c);
+  s.json({ok:true,customer:safeCustomer(updated),message:'Your funding account has been created.'});
+ }catch(e){console.error('Funding account provisioning:',e.message);s.status(502).json({error:e.message||'Could not create your funding account. Please try again later.'})}
+});
 app.post('/api/profile/withdrawal',dbReady,auth,writes,async(q,s)=>{const bank=String(q.body.bankName||'').trim(),num=String(q.body.accountNumber||'').replace(/\D/g,''),name=String(q.body.accountName||'').trim();if(!bank||!/^\d{10}$/.test(num)||name.length<2)return s.status(400).json({error:'Enter valid bank details.'});try{await db('customers?id=eq.'+q.session.customerId,'PATCH',{withdrawal_bank_name:bank,withdrawal_account_number:num,withdrawal_account_name:name},{Prefer:'return=minimal'});s.json({ok:true,message:'Bank details saved securely.'})}catch(e){s.status(500).json({error:'Could not save bank details.'})}});
 app.post('/api/withdrawals',dbReady,auth,writes,async(q,s)=>{try{const amount=Number(q.body.amount),bank=String(q.body.bankName||''),num=String(q.body.accountNumber||'').replace(/\D/g,''),name=String(q.body.accountName||'');if(!Number.isSafeInteger(Math.round(amount*100))||amount<1000)return s.status(400).json({error:'Minimum withdrawal request is ₦1,000.'});const r=await db('rpc/request_withdrawal','POST',{p_customer_id:q.session.customerId,p_amount_kobo:Math.round(amount*100),p_bank_name:bank,p_account_number:num,p_account_name:name});s.status(201).json({ok:true,message:'Withdrawal request submitted. The amount is reserved from your wallet.',withdrawal:r})}catch(e){const m=e.message||'';if(/insufficient wallet balance/i.test(m))return s.status(400).json({error:'Your wallet balance is not enough.'});if(/pending withdrawal/i.test(m))return s.status(409).json({error:'You already have a pending withdrawal this month.'});if(/invalid withdrawal/i.test(m))return s.status(400).json({error:'Check your bank details and withdrawal amount.'});console.error('Withdrawal:',m);s.status(500).json({error:'Could not submit withdrawal request.'})}});
 async function webhook(q,s){
