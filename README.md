@@ -1,32 +1,22 @@
-# Ten Term Customer Website
+# Ten Term — Customer and Admin Portals
 
-Customer-facing Ten Term portal with Paystack Dedicated Virtual Account integration.
+This repository deploys the customer portal at `/` and the private admin portal at `/admin`. Both use one server and the dedicated Ten Term Supabase project.
 
-## Payment flow
-1. Customer registers with name, phone and email.
-2. Server creates a Paystack customer and requests a Dedicated Virtual Account.
-3. The customer sees the provider-issued account number in the dashboard.
-4. Customer transfers to that account.
-5. Paystack sends `charge.success` to `/api/paystack/webhook`.
-6. Server verifies `x-paystack-signature` with the Paystack secret key and records the deposit.
+## Backend configuration
 
-Do not generate bank account numbers locally. Do not put the Paystack secret key in frontend JavaScript or GitHub.
+Set these environment variables on Render:
+- `SUPABASE_URL=https://ryucqteaazvlsshqcybc.supabase.co`
+- `SUPABASE_SECRET_KEY` — create/copy a server-only Supabase secret key; never put it in browser code or GitHub.
+- `SESSION_SECRET` — a random value of at least 32 characters.
+- `ADMIN_EMAIL` and `ADMIN_PASSWORD_HASH` — admin login; store only a bcrypt hash.
+- `PAYSTACK_ENABLED=false` until Paystack confirms the business category and DVA eligibility.
+- `PAYSTACK_SECRET_KEY` — server-only, add only after approval.
 
-## Environment variables
-- `PAYSTACK_SECRET_KEY`: Paystack LIVE secret key, server-only.
-- `PAYSTACK_PREFERRED_BANK`: `titan-paystack` or another supported provider slug after confirming availability in your Paystack account.
-- `PUBLIC_APP_URL`: public customer URL after deployment.
-- `SESSION_SECRET`: long random secret.
+## Money safety
+The database has a signed wallet ledger. Verified Paystack deposits credit it once; withdrawal requests reserve funds atomically; rejected requests refund the reserved amount. Never mark a withdrawal paid until the bank transfer has actually been completed. Daily task rewards are not automatic or guaranteed and must be configured and reviewed by the administrator.
 
-## Webhook
-After deployment, set this in Paystack:
-`https://YOUR-RENDER-SERVICE.onrender.com/api/paystack/webhook`
+## Paystack webhook
+Only after Paystack is approved and funding is enabled, configure:
+`https://YOUR-RENDER-DOMAIN/api/paystack/webhook`
 
-## Withdrawals
-Ten Term stores the customer's bank details and withdrawal request. Customer payouts are manual admin payments; this customer service does not use Paystack to send withdrawals.
-
-## Important compliance note
-Paystack states that Nigerian businesses in financial services, betting and general services may need customer identity validation before a DVA can be generated. Confirm your exact business category and approval with Paystack before accepting live customer deposits.
-
-## Plans and task rewards
-The six amounts requested are shown in the customer architecture: NGN 1,500; 2,500; 3,500; 10,000; 15,000; 3,500. Daily task rewards are deliberately not hard-coded as guaranteed returns. The task UI says the reward is set by admin and should correspond to genuine completed work. Configure the exact reward rules before launch.
+Do not accept live deposits until both portals, webhook verification, and wallet reconciliation have been tested.
