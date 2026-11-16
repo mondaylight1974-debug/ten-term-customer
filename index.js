@@ -22,7 +22,7 @@ class Store extends session.Store{
  destroy(id,cb=()=>{}){db('sessions?sid=eq.'+encodeURIComponent(id),'DELETE',undefined,{Prefer:'return=minimal'}).then(()=>cb()).catch(cb)}
 }
 app.set('trust proxy',1);app.use(helmet({contentSecurityPolicy:false}));
-app.use((req,res,next)=>{if(['POST','PUT','PATCH','DELETE'].includes(req.method)&&req.path!='/api/paystack/webhook'){const o=req.get('origin');if(o){try{if(new URL(o).host!==req.get('host'))return res.status(403).json({error:'Request origin is not allowed.'})}catch{return res.status(403).json({error:'Invalid request origin.'})}}}next()});
+app.use((req,res,next)=>{if(['POST','PUT','PATCH','DELETE'].includes(req.method)&&req.path!='/api/paystack/webhook'){const o=req.get('origin');if(o){try{if(new globalThis.URL(o).host!==req.get('host'))return res.status(403).json({error:'Request origin is not allowed.'})}catch{return res.status(403).json({error:'Invalid request origin.'})}}}next()});
 app.post('/api/paystack/webhook',express.raw({type:'application/json',limit:'200kb'}),webhook);
 app.use(express.json({limit:'30kb'}));
 app.use(session({name:'ten_term.sid',secret:SECRET,store:new Store(),resave:false,saveUninitialized:false,rolling:true,cookie:{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:28800000}}));
