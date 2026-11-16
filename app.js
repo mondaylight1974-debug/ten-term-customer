@@ -9,12 +9,15 @@ function copy(text,done){navigator.clipboard?.writeText(text).then(()=>notify(do
 function enter(){authView.classList.add("hidden");dash.classList.remove("hidden");$("#logoutBtn").classList.remove("hidden")}
 
 function ensureFundingButton(hasAccount){
- let note=$("#fundingConsentNote"),btn=$("#createFundingAccount");
- if(!note){note=document.createElement("p");note.id="fundingConsentNote";note.style.cssText="font-size:12px;line-height:1.45;color:#687386;margin:8px 0";$("#payStatus").insertAdjacentElement("afterend",note);}
- if(!btn){btn=document.createElement("button");btn.id="createFundingAccount";btn.type="button";btn.textContent="Create my funding account";btn.style.cssText="margin-top:8px;padding:11px 16px;border:0;border-radius:10px;background:#2458d3;color:#fff;font-weight:600";note.insertAdjacentElement("afterend",btn);btn.onclick=async()=>{btn.disabled=true;btn.textContent="Requesting account…";try{const d=await api("/api/funding-account/create",{method:"POST",body:JSON.stringify({consent:true})});notify(d.message||"Funding account request completed.");render(await api("/api/me"));}catch(e){notify(e.message);btn.disabled=false;btn.textContent="Try again";}};}
- note.textContent=hasAccount?"Your dedicated funding account is ready.":"By pressing the button, you consent to Ten Term sending your name, email address and phone number to Paystack to request a dedicated bank account.";
- btn.hidden=hasAccount;note.hidden=hasAccount;
+ const note=$("#fundingConsentNote"),btn=$("#createFundingAccount");
+ note.hidden=hasAccount;btn.hidden=hasAccount;
+ note.textContent=hasAccount?"Your dedicated funding account is ready. Use the account number above to fund your wallet.":"Tap once to consent to sharing your name, email and phone securely with Paystack so your personal funding account can be assigned.";
 }
+$("#createFundingAccount").onclick=async()=>{
+ const btn=$("#createFundingAccount");btn.disabled=true;btn.textContent="Requesting account…";
+ try{const d=await api("/api/funding-account/create",{method:"POST",body:JSON.stringify({consent:true})});notify(d.message||"Funding account request completed.");render(await api("/api/me"));}
+ catch(e){notify(e.message);btn.disabled=false;btn.textContent="Create my funding account";}
+};
 function render(d){const c=d.customer;$("#customerName").textContent=c.full_name.split(" ")[0];$("#accountId").textContent=c.account_id;$("#todayLabel").textContent=new Date().toLocaleDateString("en-NG",{weekday:"long",day:"numeric",month:"long",year:"numeric"});$("#refLink").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#payAccount").textContent=c.dva?.account_number||"Pending";$("#payBank").textContent=c.dva?.bank_name||"Funding account";$("#payStatus").textContent=c.dva?`Account name: ${c.dva.account_name}`:"Request your dedicated funding account below. Your name, email and phone will be shared securely with Paystack for account creation.";ensureFundingButton(!!c.dva);$("#bankName").value=c.withdrawal.bank_name||"";$("#accountNumber").value=c.withdrawal.account_number||"";$("#accountName").value=c.withdrawal.account_name||"";renderTx(d.deposits||[],d.withdrawals||[])}
 function renderTx(ds,ws){const rows=[...ds.map(x=>({type:"Deposit",...x})),...ws.map(x=>({type:"Withdrawal",...x}))].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));$("#transactionList").innerHTML=rows.length?rows.slice(0,15).map(x=>`<div class="row"><div><strong>${x.type}</strong><small>${new Date(x.created_at+"Z").toLocaleString()}</small></div><div><strong>${x.amount}</strong><small class="status ${x.status}">${x.status}</small></div></div>`).join(""):"<div class='empty'>No transactions yet.</div>"}
 $("#loginForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/login",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});enter();render(await api("/api/me"))}catch(x){msg(x.message)}};
