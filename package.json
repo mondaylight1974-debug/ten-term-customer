@@ -1,1 +1,17 @@
-{"name":"ten-term-customer","version":"2.0.0","private":true,"description":"Ten Term customer portal with Paystack DVA collection and manual withdrawals","main":"server/index.js","scripts":{"start":"node server/index.js","dev":"node server/index.js"},"engines":{"node":"20.x","npm":">=10"},"dependencies":{"bcryptjs":"^2.4.3","better-sqlite3":"^11.8.1","dotenv":"^16.4.7","express":"^4.21.2","express-session":"^1.18.1","helmet":"^8.0.0"}}
+{
+  "name":"ten-term-customer-admin",
+  "version":"3.0.0",
+  "private":true,
+  "description":"Ten Term customer and admin portals with secure wallet ledger",
+  "main":"server/index.js",
+  "scripts":{"start":"node server/index.js"},
+  "engines":{"node":"20.x"},
+  "dependencies":{
+    "bcryptjs":"2.4.3",
+    "dotenv":"16.4.7",
+    "express":"4.21.2",
+    "express-rate-limit":"7.5.0",
+    "express-session":"1.18.1",
+    "helmet":"8.0.0"
+  }
+}
