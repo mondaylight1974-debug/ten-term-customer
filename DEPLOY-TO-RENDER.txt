@@ -1,0 +1,25 @@
+TEN TERM CUSTOMER - RENDER DEPLOYMENT
+
+This ZIP is structured with package.json at the project root so Render can run:
+  npm install
+  npm start
+
+The customer service is a Node/Express app.
+
+Recommended Render service:
+  Type: Web Service
+  Runtime: Node
+  Build Command: npm install
+  Start Command: npm start
+
+Required environment variables on Render:
+  NODE_ENV=production
+  SESSION_SECRET=<generate a secure value>
+  PUBLIC_APP_URL=<your Render URL>
+  PAYSTACK_SECRET_KEY=<your rotated Paystack secret key>
+  PAYSTACK_PREFERRED_BANK=titan-paystack
+
+Paystack webhook after deployment:
+  https://YOUR-RENDER-URL/api/paystack/webhook
+
+Never put PAYSTACK_SECRET_KEY in GitHub or the frontend.
