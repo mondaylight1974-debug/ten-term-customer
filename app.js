@@ -32,7 +32,20 @@ $("#createFundingAccount").onclick=async()=>{
   btn.disabled=false;btn.textContent="Try again after Paystack activation";
  }
 };
-function render(d){const c=d.customer;$("#customerName").textContent=c.full_name.split(" ")[0];$("#accountId").textContent=c.account_id;$("#todayLabel").textContent=new Date().toLocaleDateString("en-NG",{weekday:"long",day:"numeric",month:"long",year:"numeric"});$("#refLink").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#payAccount").textContent=c.dva?.account_number||"Pending";$("#payBank").textContent=c.dva?.bank_name||"Funding account";$("#payStatus").textContent=c.dva?"Account name: "+c.dva.account_name:"Request your dedicated funding account below. Your name, email and phone will be shared securely with Paystack for account creation.";ensureFundingButton(!!c.dva);$("#bankName").value=c.withdrawal.bank_name||"";$("#accountNumber").value=c.withdrawal.account_number||"";$("#accountName").value=c.withdrawal.account_name||"";renderTx(d.deposits||[],d.withdrawals||[])}
+function renderTasks(tasks){
+ const el=$("#taskList");if(!el)return;el.replaceChildren();
+ if(!tasks.length){const empty=document.createElement("div");empty.className="empty";empty.textContent="There are no active task plans right now. Please check again later.";el.append(empty);return}
+ tasks.forEach(t=>{
+  const row=document.createElement("div");row.className="task";
+  const icon=document.createElement("div");icon.className="task-icon";icon.textContent="✓";
+  const info=document.createElement("div");
+  const title=document.createElement("strong");title.textContent=t.title||"Available task";
+  const desc=document.createElement("p");desc.textContent=t.description||"Follow the task instructions shown here.";
+  const reward=document.createElement("span");reward.className="reward";reward.textContent=t.reward||"Reward pending";
+  info.append(title,desc);row.append(icon,info,reward);el.append(row);
+ });
+}
+function render(d){const c=d.customer;$("#customerName").textContent=c.full_name.split(" ")[0];$("#accountId").textContent=c.account_id;$("#todayLabel").textContent=new Date().toLocaleDateString("en-NG",{weekday:"long",day:"numeric",month:"long",year:"numeric"});$("#refLink").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#payAccount").textContent=c.dva?.account_number||"Pending";$("#payBank").textContent=c.dva?.bank_name||"Funding account";$("#payStatus").textContent=c.dva?"Account name: "+c.dva.account_name:"Request your dedicated funding account below. Your name, email and phone will be shared securely with Paystack for account creation.";ensureFundingButton(!!c.dva);$("#bankName").value=c.withdrawal.bank_name||"";$("#accountNumber").value=c.withdrawal.account_number||"";$("#accountName").value=c.withdrawal.account_name||"";renderTasks(d.tasks||[]);renderTx(d.deposits||[],d.withdrawals||[])}
 function renderTx(ds,ws){const rows=[...ds.map(x=>({type:"Deposit",...x})),...ws.map(x=>({type:"Withdrawal",...x}))].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));$("#transactionList").innerHTML=rows.length?rows.slice(0,15).map(x=>"<div class=\"row\"><div><strong>"+x.type+"</strong><small>"+new Date(x.created_at+"Z").toLocaleString()+"</small></div><div><strong>"+x.amount+"</strong><small class=\"status "+x.status+"\">"+x.status+"</small></div></div>").join(""):"<div class='empty'>No transactions yet.</div>"}
 $("#loginForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/login",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});enter();render(await api("/api/me"))}catch(x){msg(x.message)}};
 $("#registerForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/register",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});enter();render(await api("/api/me"));notify("Account created successfully.")}catch(x){msg(x.message)}};
