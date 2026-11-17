@@ -13,16 +13,18 @@ function setupDashboardNavigation(){
  const nav=$("#mobileBottomNav"),welcome=dash.querySelector(".welcome"),stats=dash.querySelector(".stats"),payment=dash.querySelector(".payment-card"),cards=dash.querySelector(".grid"),plans=$("#plansPanel"),content=dash.querySelector(".content");
  const active=document.createElement("div");active.className="dashboard-page";active.id="page-active";
  const plansPage=document.createElement("div");plansPage.className="dashboard-page hidden";plansPage.id="page-plans";
+ const tasksPage=document.createElement("div");tasksPage.className="dashboard-page hidden";tasksPage.id="page-tasks";
  const withdrawalPage=document.createElement("div");withdrawalPage.className="dashboard-page hidden";withdrawalPage.id="page-withdrawal";
  const profilePage=document.createElement("div");profilePage.className="dashboard-page hidden";profilePage.id="page-profile";
  [welcome,stats,payment,cards].forEach(n=>n&&active.append(n));
  const deposit=$("#depositPanel"),tasks=$("#tasksPanel"),withdraw=$("#withdrawPanel"),transactions=$("#transactionList")?.closest(".panel");
- [deposit,tasks,transactions].forEach(n=>n&&active.append(n));
+ [deposit,transactions].forEach(n=>n&&active.append(n));
+ if(tasks)tasksPage.append(tasks);
  if(plans)plansPage.append(plans);
  if(withdraw)withdrawalPage.append(withdraw);
  const profile=document.createElement("section");profile.className="panel profile-panel";
  profile.innerHTML='<div class="panel-head"><div><div class="eyebrow">YOUR ACCOUNT</div><h2>Profile</h2><p>Your Ten Term account information and referral details.</p></div></div><div class="profile-details"><div><small>Full name</small><strong id="profileName">—</strong></div><div><small>Ten Term ID</small><strong id="profileId">—</strong></div><div><small>Account status</small><strong>Active</strong></div><div><small>Referral link</small><strong id="profileReferral">—</strong></div></div><button type="button" class="btn ghost" id="profileCopyReferral">Copy referral link</button>';
- profilePage.append(profile);[active,plansPage,withdrawalPage,profilePage].forEach(p=>dash.insertBefore(p,dash.querySelector("footer")));
+ profilePage.append(profile);[active,plansPage,tasksPage,withdrawalPage,profilePage].forEach(p=>dash.insertBefore(p,dash.querySelector("footer")));
  if(content&&!content.children.length)content.remove();
  nav?.classList.remove("hidden");
  nav?.querySelectorAll("[data-page]").forEach(b=>b.addEventListener("click",()=>showDashboardPage(b.dataset.page)));
@@ -30,7 +32,7 @@ function setupDashboardNavigation(){
  showDashboardPage("active");
 }
 function showDashboardPage(name){
- const ids={active:"#page-active",plans:"#page-plans",withdrawal:"#page-withdrawal",profile:"#page-profile"};
+ const ids={active:"#page-active",tasks:"#page-tasks",plans:"#page-plans",withdrawal:"#page-withdrawal",profile:"#page-profile"};
  Object.entries(ids).forEach(([key,sel])=>$(sel)?.classList.toggle("hidden",key!==name));
  $("#mobileBottomNav")?.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===name));
  window.scrollTo({top:0,behavior:"smooth"});
@@ -86,7 +88,7 @@ function renderTasks(tasks){
   const info=document.createElement("div");
   const title=document.createElement("strong");title.textContent=t.title||"Available task";
   const desc=document.createElement("p");desc.textContent=t.description||"Follow the task instructions shown here.";
-  const reward=document.createElement("span");reward.className="reward";reward.textContent=t.reward||"Reward pending";
+  const reward=document.createElement("span");reward.className="reward";reward.textContent=Number(t.reward_kobo)>0?t.reward:"Reward depends on your activated plan";
   info.append(title,desc);row.append(icon,info,reward);el.append(row);
  });
 }
