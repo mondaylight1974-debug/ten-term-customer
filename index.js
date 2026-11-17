@@ -15,11 +15,40 @@ async function db(pathname,method='GET',body,headers={}){
  const raw=await r.text();let d=null;try{d=raw?JSON.parse(raw):null}catch{d=raw;}
  if(!r.ok)throw Error((d&&(d.message||d.hint))||('Database error '+r.status));return d;
 }
+// Keep recently used sessions in memory to avoid a Supabase round-trip on every
+// authenticated request. Supabase remains the durable store across restarts.
+const sessionCache=new Map(),sessionPersistedAt=new Map(),SESSION_CACHE_MAX=1000;
 class Store extends session.Store{
- get(id,cb){db('sessions?sid=eq.'+encodeURIComponent(id)+'&select=sess,expire').then(a=>{const x=a&&a[0];cb(null,!x||new Date(x.expire)<=new Date()?null:x.sess)}).catch(cb)}
- set(id,s,cb=()=>{}){const exp=s.cookie&&s.cookie.expires||new Date(Date.now()+28800000);db('sessions?on_conflict=sid','POST',{sid:id,sess:s,expire:new Date(exp).toISOString()},{Prefer:'resolution=merge-duplicates,return=minimal'}).then(()=>cb()).catch(cb)}
- touch(id,s,cb=()=>{}){const exp=s.cookie&&s.cookie.expires||new Date(Date.now()+28800000);db('sessions?sid=eq.'+encodeURIComponent(id),'PATCH',{expire:new Date(exp).toISOString()},{Prefer:'return=minimal'}).then(()=>cb()).catch(cb)}
- destroy(id,cb=()=>{}){db('sessions?sid=eq.'+encodeURIComponent(id),'DELETE',undefined,{Prefer:'return=minimal'}).then(()=>cb()).catch(cb)}
+ get(id,cb){
+  const cached=sessionCache.get(id);
+  if(cached&&new Date(cached.expire)>new Date()){cached.lastSeen=Date.now();return process.nextTick(()=>cb(null,cached.sess));}
+  if(cached){sessionCache.delete(id);sessionPersistedAt.delete(id);}
+  db('sessions?sid=eq.'+encodeURIComponent(id)+'&select=sess,expire').then(a=>{
+   const x=a&&a[0];if(!x||new Date(x.expire)<=new Date())return cb(null,null);
+   sessionCache.set(id,{sess:x.sess,expire:x.expire,lastSeen:Date.now()});
+   if(sessionCache.size>SESSION_CACHE_MAX)sessionCache.delete(sessionCache.keys().next().value);
+   sessionPersistedAt.set(id,Date.now());cb(null,x.sess);
+  }).catch(cb);
+ }
+ set(id,s,cb=()=>{}){
+  const exp=s.cookie&&s.cookie.expires||new Date(Date.now()+28800000),iso=new Date(exp).toISOString();
+  sessionCache.set(id,{sess:s,expire:iso,lastSeen:Date.now()});
+  if(sessionCache.size>SESSION_CACHE_MAX)sessionCache.delete(sessionCache.keys().next().value);
+  sessionPersistedAt.set(id,Date.now());
+  db('sessions?on_conflict=sid','POST',{sid:id,sess:s,expire:iso},{Prefer:'resolution=merge-duplicates,return=minimal'}).then(()=>cb()).catch(e=>{sessionCache.delete(id);sessionPersistedAt.delete(id);cb(e)});
+ }
+ touch(id,s,cb=()=>{}){
+  const exp=s.cookie&&s.cookie.expires||new Date(Date.now()+28800000),iso=new Date(exp).toISOString(),now=Date.now();
+  sessionCache.set(id,{sess:s,expire:iso,lastSeen:now});
+  // Avoid writing the same session expiry on every page/API request.
+  if(now-(sessionPersistedAt.get(id)||0)<60000)return process.nextTick(cb);
+  sessionPersistedAt.set(id,now);
+  db('sessions?sid=eq.'+encodeURIComponent(id),'PATCH',{expire:iso},{Prefer:'return=minimal'}).then(()=>cb()).catch(e=>{sessionPersistedAt.delete(id);cb(e)});
+ }
+ destroy(id,cb=()=>{}){
+  sessionCache.delete(id);sessionPersistedAt.delete(id);
+  db('sessions?sid=eq.'+encodeURIComponent(id),'DELETE',undefined,{Prefer:'return=minimal'}).then(()=>cb()).catch(cb);
+ }
 }
 app.set('trust proxy',1);app.use(helmet({contentSecurityPolicy:false}));
 app.use((req,res,next)=>{if(['POST','PUT','PATCH','DELETE'].includes(req.method)&&req.path!='/api/paystack/webhook'){const o=req.get('origin');if(o){try{if(new globalThis.URL(o).host!==req.get('host'))return res.status(403).json({error:'Request origin is not allowed.'})}catch{return res.status(403).json({error:'Invalid request origin.'})}}}next()});
