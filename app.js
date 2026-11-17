@@ -41,7 +41,7 @@ function enter(){authView.classList.add("hidden");dash.classList.remove("hidden"
 function ensureFundingButton(hasAccount){
  const note=$("#fundingConsentNote"),btn=$("#createFundingAccount");
  note.hidden=hasAccount;btn.hidden=hasAccount;
- note.textContent=hasAccount?"Your dedicated funding account is ready. Use the account number above to fund your wallet.":"Tap once to consent to sharing your name, email and phone securely with Paystack so your personal funding account can be assigned.";
+ note.textContent=hasAccount?"Your dedicated funding account is ready. Use the account number above to fund your wallet.":"Tap once to consent to sharing your name, email and phone securely with our payment provider so your personal funding account can be assigned.";
 }
 $("#createFundingAccount").onclick=async()=>{
  const btn=$("#createFundingAccount"),status=$("#payStatus"),bank=$("#payBank");
@@ -54,12 +54,12 @@ $("#createFundingAccount").onclick=async()=>{
  }catch(e){
   const detail=String(e.message||"Funding account request failed.");
   const unavailable=/Dedicated NUBAN is not available/i.test(detail);
-  bank.textContent=unavailable?"Paystack activation required":"Funding account not created";
+  bank.textContent=unavailable?"Funding account unavailable":"Funding account not created";
   status.textContent=unavailable
-   ?"Paystack has not enabled Dedicated Virtual Accounts (Dedicated NUBAN) for this merchant account. The account cannot be generated yet. The business owner must contact support@paystack.com and request DVA/Dedicated NUBAN activation for this exact business account."
+   ?"Your personal funding account is not available yet. Please try again later. Do not transfer money until your account number appears here."
    :detail;
-  notify(unavailable?"Paystack must activate Dedicated NUBAN first.":detail);
-  btn.disabled=false;btn.textContent="Try again after Paystack activation";
+  notify(unavailable?"Your funding account is not available yet.":detail);
+  btn.disabled=false;btn.textContent="Try again later";
  }
 };
 async function renderPlans(){
