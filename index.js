@@ -6,6 +6,10 @@ const app=express(),PORT=process.env.PORT||3000;
 const URL=(process.env.SUPABASE_URL||'').replace(/\/$/,''),KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SECRET=process.env.SESSION_SECRET,APP_URL=(process.env.PUBLIC_APP_URL||'').replace(/\/$/,'');
 const PAY_KEY=process.env.PAYSTACK_SECRET_KEY,PAY_ON=process.env.PAYSTACK_ENABLED==='true';
+const MONNIFY_BASE=(process.env.MONNIFY_BASE_URL||'').replace(/\/$/,'');
+const MONNIFY_KEY=process.env.MONNIFY_API_KEY,MONNIFY_SECRET=process.env.MONNIFY_SECRET_KEY,MONNIFY_CONTRACT=process.env.MONNIFY_CONTRACT_CODE;
+const MONNIFY_ON=!!(MONNIFY_BASE&&MONNIFY_KEY&&MONNIFY_SECRET&&MONNIFY_CONTRACT);
+let monnifyToken=null,monnifyTokenExpires=0;
 const ADMIN=String(process.env.ADMIN_EMAIL||'').trim().toLowerCase(),ADMIN_HASH=process.env.ADMIN_PASSWORD_HASH||'';
 if(!SECRET||SECRET.length<32){console.error('Set SESSION_SECRET to at least 32 random characters.');process.exit(1);}
 const ready=!!(URL&&KEY);
@@ -53,6 +57,7 @@ class Store extends session.Store{
 app.set('trust proxy',1);app.use(helmet({contentSecurityPolicy:false}));
 app.use((req,res,next)=>{if(['POST','PUT','PATCH','DELETE'].includes(req.method)&&req.path!='/api/paystack/webhook'){const o=req.get('origin');if(o){try{if(new globalThis.URL(o).host!==req.get('host'))return res.status(403).json({error:'Request origin is not allowed.'})}catch{return res.status(403).json({error:'Invalid request origin.'})}}}next()});
 app.post('/api/paystack/webhook',express.raw({type:'application/json',limit:'200kb'}),webhook);
+app.post('/api/monnify/webhook',express.raw({type:'application/json',limit:'200kb'}),monnifyWebhook);
 app.use(express.json({limit:'30kb'}));
 app.use(session({name:'ten_term.sid',secret:SECRET,store:new Store(),resave:false,saveUninitialized:false,rolling:true,cookie:{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:28800000}}));
 app.use(express.static(path.join(__dirname,'public'),{index:false}));
@@ -68,6 +73,76 @@ const refCode=()=> 'TTREF-'+crypto.randomBytes(4).toString('hex').toUpperCase();
 const names=n=>{const a=n.trim().split(/\s+/);return {first_name:a[0],last_name:a.slice(1).join(' ')||a[0]}};
 async function pay(pathname,body){if(!PAY_KEY)throw Error('Paystack is not configured.');const r=await fetch('https://api.paystack.co'+pathname,{method:'POST',headers:{Authorization:'Bearer '+PAY_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(!r.ok||d.status===false)throw Error(d.message||'Paystack request failed.');return d.data;}
 async function payGet(pathname){if(!PAY_KEY)throw Error('Paystack is not configured.');const r=await fetch('https://api.paystack.co'+pathname,{headers:{Authorization:'Bearer '+PAY_KEY}});const d=await r.json().catch(()=>({}));if(!r.ok||d.status===false)throw Error(d.message||'Paystack request failed.');return d.data;}
+
+async function monnifyAccessToken(){
+ if(!MONNIFY_ON)throw Error('Monnify sandbox credentials are not configured on the server.');
+ if(monnifyToken&&Date.now()<monnifyTokenExpires)return monnifyToken;
+ const basic=Buffer.from(MONNIFY_KEY+':'+MONNIFY_SECRET).toString('base64');
+ const r=await fetch(MONNIFY_BASE+'/api/v1/auth/login',{method:'POST',headers:{Authorization:'Basic '+basic,'Content-Type':'application/json'}});
+ const d=await r.json().catch(()=>({}));
+ if(!r.ok||!d.requestSuccessful||!d.responseBody?.accessToken)throw Error(d.responseMessage||'Monnify authentication failed.');
+ monnifyToken=d.responseBody.accessToken;monnifyTokenExpires=Date.now()+Math.max(60,Number(d.responseBody.expiresIn||3600)-120)*1000;
+ return monnifyToken;
+}
+async function monnifyRequest(pathname,method='GET',body){
+ const token=await monnifyAccessToken(),r=await fetch(MONNIFY_BASE+pathname,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+ const d=await r.json().catch(()=>({}));
+ if(!r.ok||!d.requestSuccessful||!d.responseBody)throw Error(d.responseMessage||d.message||'Monnify request failed.');
+ return d.responseBody;
+}
+async function createMonnifyTransfer(c,amountNaira){
+ const amountKobo=Math.round(amountNaira*100);
+ const paymentReference='TT-'+c.id+'-'+amountKobo+'-'+crypto.randomBytes(8).toString('hex').toUpperCase();
+ const init=await monnifyRequest('/api/v1/merchant/transactions/init-transaction','POST',{
+  amount:amountNaira,customerEmail:c.email,customerName:c.full_name,contractCode:MONNIFY_CONTRACT,
+  paymentReference,currencyCode:'NGN',paymentDescription:'Ten Term wallet funding',
+  paymentMethods:['ACCOUNT_TRANSFER'],metadata:{tenTermCustomerId:String(c.id),tenTermAccountId:c.account_id}
+ });
+ if(!init.transactionReference)throw Error('Monnify did not return a transaction reference.');
+ const transfer=await monnifyRequest('/api/v1/merchant/bank-transfer/init-payment','POST',{transactionReference:init.transactionReference,bankCode:process.env.MONNIFY_BANK_CODE||'058'});
+ if(!transfer.accountNumber)throw Error('Monnify did not return a temporary transfer account. Check the enabled sandbox banks and try again.');
+ const expiresAt=new Date(Date.now()+Math.min(2400,Number(transfer.accountDurationSeconds||2400))*1000).toISOString();
+ const rows=await db('monnify_payment_sessions','POST',{
+  customer_id:c.id,payment_reference:paymentReference,transaction_reference:init.transactionReference,
+  amount_kobo:amountKobo,account_number:String(transfer.accountNumber),account_name:String(transfer.accountName||''),
+  bank_name:String(transfer.bankName||''),expires_at:expiresAt,status:'pending',
+  provider_payload:{init,transfer}
+ },{Prefer:'return=representation'});
+ const row=rows&&rows[0];if(!row)throw Error('Could not save your temporary funding account. Please try again.');
+ return {payment_reference:paymentReference,transaction_reference:init.transactionReference,amount:amountNaira,
+  account_number:String(transfer.accountNumber),account_name:String(transfer.accountName||''),bank_name:String(transfer.bankName||''),
+  expires_at:expiresAt,status:'pending'};
+}
+async function monnifyWebhook(q,s){
+ try{
+  const raw=q.body;if(!Buffer.isBuffer(raw))return s.status(400).send('Invalid payload');
+  const event=JSON.parse(raw.toString('utf8')),data=event.eventData||{},eventType=String(event.eventType||'');
+  if(MONNIFY_BASE!=='https://sandbox.monnify.com'){
+   const sig=q.get('monnify-signature');if(!sig)return s.status(401).send('Missing signature');
+   const expected=crypto.createHmac('sha512',MONNIFY_SECRET).update(raw).digest('hex');
+   const a=Buffer.from(expected.toLowerCase()),b=Buffer.from(String(sig).toLowerCase());
+   if(a.length!==b.length||!crypto.timingSafeEqual(a,b))return s.status(401).send('Invalid signature');
+  }
+  if(eventType!=='SUCCESSFUL_TRANSACTION')return s.sendStatus(200);
+  const paymentReference=String(data.paymentReference||'');if(!paymentReference)return s.status(400).send('Missing payment reference');
+  const rows=await db('monnify_payment_sessions?payment_reference=eq.'+encodeURIComponent(paymentReference)+'&select=id,customer_id,amount_kobo,transaction_reference,status&limit=1');
+  const sessionRow=rows&&rows[0];if(!sessionRow)return s.status(404).send('Funding session not found');
+  if(sessionRow.status==='successful')return s.sendStatus(200);
+  const verified=await monnifyRequest('/api/v2/merchant/transactions/query?paymentReference='+encodeURIComponent(paymentReference));
+  const paidKobo=Math.round(Number(verified.amountPaid||0)*100);
+  if(verified.paymentStatus!=='PAID'||String(verified.currencyCode||verified.currency||'NGN').toUpperCase()!=='NGN'||
+     paidKobo!==Number(sessionRow.amount_kobo)||String(verified.transactionReference||'')!==sessionRow.transaction_reference){
+   console.warn('Monnify transaction did not pass verification:',paymentReference,verified.paymentStatus);
+   return s.status(400).send('Transaction not verified');
+  }
+  await db('rpc/record_verified_deposit','POST',{
+   p_customer_id:sessionRow.customer_id,p_amount_kobo:paidKobo,
+   p_reference:'MONNIFY:'+paymentReference,p_payload:{provider:'monnify',event,verified}
+  });
+  await db('monnify_payment_sessions?id=eq.'+sessionRow.id,'PATCH',{status:'successful',paid_at:new Date().toISOString(),provider_payload:{event,verified}},{Prefer:'return=minimal'});
+  s.sendStatus(200);
+ }catch(e){console.error('Monnify webhook:',e.message);s.status(500).send('Webhook processing failed')}
+}
 async function provisionDva(c){
  if(!PAY_KEY)throw Error('Paystack secret key is not configured on the server.');
  if(c.dva_account_number)return c;
@@ -88,7 +163,7 @@ async function customer(id){const a=await db('customers?id=eq.'+encodeURICompone
 function safeCustomer(c){return {id:c.id,account_id:c.account_id,full_name:c.full_name,email:c.email,phone:c.phone,referral_code:c.referral_code,referral_link:APP_URL+'/?ref='+encodeURIComponent(c.referral_code),dva:c.dva_account_number?{account_number:c.dva_account_number,bank_name:c.dva_bank_name,account_name:c.dva_account_name}:null,withdrawal:{bank_name:c.withdrawal_bank_name||'',account_number:c.withdrawal_account_number||'',account_name:c.withdrawal_account_name||''},created_at:c.created_at};}
 async function dashboard(id){
  const c=await customer(id);if(!c)throw Error('Customer not found.');
- const [ds,ws,ls,ts,subs,comps,settings,refs,rws]=await Promise.all([
+ const [ds,ws,ls,ts,subs,comps,settings,refs,rws,ms]=await Promise.all([
  db('deposits?customer_id=eq.'+id+'&select=id,amount_kobo,status,provider_reference,created_at&order=created_at.desc&limit=20'),
  db('withdrawals?customer_id=eq.'+id+'&select=id,amount_kobo,status,bank_name,account_number,account_name,created_at&order=created_at.desc&limit=20'),
  db('wallet_ledger?customer_id=eq.'+id+'&select=amount_kobo'),
@@ -97,13 +172,14 @@ async function dashboard(id){
  db('task_completions?customer_id=eq.'+id+'&select=id,task_id,status,proof,reward_kobo,work_date,created_at&order=created_at.desc&limit=50'),
  db('programme_settings?setting_key=eq.plan_sales_enabled&select=setting_value&limit=1'),
  db('referral_earnings?referrer_customer_id=eq.'+id+'&select=id,referred_customer_id,amount_kobo,status,created_at&order=created_at.desc&limit=200'),
- db('referral_withdrawals?customer_id=eq.'+id+'&select=id,amount_kobo,status,bank_name,account_number,account_name,created_at&order=created_at.desc&limit=50')
+ db('referral_withdrawals?customer_id=eq.'+id+'&select=id,amount_kobo,status,bank_name,account_number,account_name,created_at&order=created_at.desc&limit=50'),
+ db('monnify_payment_sessions?customer_id=eq.'+id+'&status=eq.pending&expires_at=gt.'+encodeURIComponent(new Date().toISOString())+'&select=payment_reference,transaction_reference,amount_kobo,account_number,account_name,bank_name,expires_at,status&order=created_at.desc&limit=1')
  ]);
  const bal=(ls||[]).reduce((n,x)=>n+Number(x.amount_kobo),0);
  const sub=subs&&subs[0]||null;
  const plan=sub?await db('plans?plan_code=eq.'+encodeURIComponent(sub.plan_code)+'&select=plan_code,name,tasks_per_day,reward_per_task_kobo&limit=1'):null;
  const referralRows=refs||[];const referralAvailable=referralRows.filter(x=>x.status==='available').reduce((n,x)=>n+Number(x.amount_kobo||0),0);const referralEarned=referralRows.filter(x=>Number(x.amount_kobo||0)>0).reduce((n,x)=>n+Number(x.amount_kobo||0),0);
- return {customer:safeCustomer(c),balance:money(bal),balance_kobo:bal,referral_reward:1000,referrals:{count:referralRows.length,earned_kobo:referralEarned,available_kobo:referralAvailable,earned:money(referralEarned),available:money(referralAvailable),withdrawals:rws||[]},deposits:(ds||[]).map(x=>({...x,amount:money(x.amount_kobo)})),withdrawals:(ws||[]).map(x=>({...x,amount:money(x.amount_kobo)})),tasks:(ts||[]).map(x=>({...x,reward:money(x.reward_kobo)})),subscription:sub?{...sub,plan:plan&&plan[0]||null}:null,task_completions:comps||[],activation_enabled:!!(settings&&settings[0]&&settings[0].setting_value),funding_enabled:PAY_ON&&!!c.dva_account_number};
+ return {customer:safeCustomer(c),balance:money(bal),balance_kobo:bal,referral_reward:1000,referrals:{count:referralRows.length,earned_kobo:referralEarned,available_kobo:referralAvailable,earned:money(referralEarned),available:money(referralAvailable),withdrawals:rws||[]},deposits:(ds||[]).map(x=>({...x,amount:money(x.amount_kobo)})),withdrawals:(ws||[]).map(x=>({...x,amount:money(x.amount_kobo)})),tasks:(ts||[]).map(x=>({...x,reward:money(x.reward_kobo)})),subscription:sub?{...sub,plan:plan&&plan[0]||null}:null,task_completions:comps||[],activation_enabled:!!(settings&&settings[0]&&settings[0].setting_value),funding_enabled:MONNIFY_ON||PAY_ON,funding_account:ms&&ms[0]?{...ms[0],amount:Number(ms[0].amount_kobo)/100}:null};
 }
 app.post('/api/plans/activate',dbReady,auth,writes,async(q,s)=>{try{const code=String(q.body.planCode||'');if(!/^[a-z0-9][a-z0-9-]{1,39}$/.test(code))return s.status(400).json({error:'Choose a valid plan.'});const result=await db('rpc/activate_customer_plan','POST',{p_customer_id:q.session.customerId,p_plan_code:code});s.status(201).json({ok:true,subscription:result,message:'Your plan is active for 31 days.'})}catch(e){const m=e.message||'';if(/Insufficient wallet balance/i.test(m))return s.status(400).json({error:'Your wallet balance is not enough. Fund your wallet first.'});if(/already have an active plan/i.test(m))return s.status(409).json({error:m});if(/not available/i.test(m))return s.status(404).json({error:m});if(/temporarily unavailable/i.test(m))return s.status(423).json({error:m});console.error('Plan activation:',m);s.status(500).json({error:'Could not activate this plan.'})}});
 app.post('/api/tasks/:id/submit',dbReady,auth,writes,async(q,s)=>{try{const id=Number(q.params.id),proof=String(q.body.proof||'');if(!Number.isSafeInteger(id)||id<1)return s.status(400).json({error:'Invalid task.'});const result=await db('rpc/submit_customer_task','POST',{p_customer_id:q.session.customerId,p_task_id:id,p_proof:proof});s.status(201).json({ok:true,submission:result,message:'Task submitted for admin review.'})}catch(e){const m=e.message||'';if(/Activate a plan|daily task limit|already submitted|proof|not available/i.test(m))return s.status(400).json({error:m});console.error('Task submission:',m);s.status(500).json({error:'Could not submit this task.'})}});
@@ -130,12 +206,16 @@ app.post('/api/logout',(q,s)=>q.session.destroy(e=>{if(e)return s.status(500).js
 app.get('/api/me',dbReady,auth,async(q,s)=>{try{s.json(await dashboard(q.session.customerId))}catch(e){console.error('Dashboard:',e.message);s.status(500).json({error:'Could not load your dashboard.'})}});
 app.post('/api/funding-account/create',dbReady,auth,writes,async(q,s)=>{
  try{
-  if(q.body.consent!==true)return s.status(400).json({error:'Please confirm consent before requesting a funding account.'});
+  if(q.body.consent!==true)return s.status(400).json({error:'Please confirm before creating a temporary transfer account.'});
+  if(!MONNIFY_ON)return s.status(503).json({error:'Monnify is not fully configured. Please contact support.'});
   const c=await customer(q.session.customerId);if(!c)return s.status(404).json({error:'Customer not found.'});
-  if(c.dva_account_number)return s.json({ok:true,customer:safeCustomer(c),message:'Your funding account is already active.'});
-  const updated=await provisionDva(c);
-  s.json({ok:true,customer:safeCustomer(updated),message:'Your funding account has been created.'});
- }catch(e){console.error('Funding account provisioning:',e.message);s.status(502).json({error:e.message||'Could not create your funding account. Please try again later.'})}
+  const amount=Number(q.body.amount);
+  if(!Number.isFinite(amount)||!Number.isInteger(amount)||amount<100||amount>10000000)return s.status(400).json({error:'Enter a whole-naira amount from ₦100 to ₦10,000,000.'});
+  const existing=await db('monnify_payment_sessions?customer_id=eq.'+c.id+'&status=eq.pending&expires_at=gt.'+encodeURIComponent(new Date().toISOString())+'&amount_kobo=eq.'+(amount*100)+'&select=payment_reference,transaction_reference,amount_kobo,account_number,account_name,bank_name,expires_at,status&order=created_at.desc&limit=1');
+  if(existing&&existing[0])return s.json({ok:true,fundingAccount:{...existing[0],amount},message:'Your temporary transfer account is ready.'});
+  const fundingAccount=await createMonnifyTransfer(c,amount);
+  s.json({ok:true,fundingAccount,message:'Your temporary transfer account is ready. Transfer the exact amount before it expires.'});
+ }catch(e){console.error('Monnify funding account:',e.message);s.status(502).json({error:e.message||'Could not create your temporary transfer account. Please try again.'})}
 });
 app.post('/api/referrals/withdraw',dbReady,auth,writes,async(q,s)=>{try{const result=await db('rpc/request_referral_withdrawal','POST',{p_customer_id:q.session.customerId});s.status(201).json({ok:true,message:'Your referral withdrawal request has been submitted for admin review.',withdrawal:result})}catch(e){const m=e.message||'';if(/last day of each month|active plan|required|bank details|at least ₦1,000|pending referral withdrawal/i.test(m))return s.status(400).json({error:m});console.error('Referral withdrawal:',m);s.status(500).json({error:'Could not submit your referral withdrawal.'})}});
 app.post('/api/profile/withdrawal',dbReady,auth,writes,async(q,s)=>{const bank=String(q.body.bankName||'').trim(),num=String(q.body.accountNumber||'').replace(/\D/g,''),name=String(q.body.accountName||'').trim();if(!bank||!/^\d{10}$/.test(num)||name.length<2)return s.status(400).json({error:'Enter valid bank details.'});try{await db('customers?id=eq.'+q.session.customerId,'PATCH',{withdrawal_bank_name:bank,withdrawal_account_number:num,withdrawal_account_name:name},{Prefer:'return=minimal'});s.json({ok:true,message:'Bank details saved securely.'})}catch(e){s.status(500).json({error:'Could not save bank details.'})}});
