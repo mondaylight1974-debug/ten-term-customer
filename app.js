@@ -78,12 +78,12 @@ async function renderPlans(){
    const count=document.createElement("div");count.textContent=(Number(p.tasks_per_day)||4)+" tasks every day";
    const reward=document.createElement("div");reward.textContent="₦"+(Number(p.reward_per_task_kobo||0)/100).toLocaleString("en-NG")+" per approved task";
    const daily=document.createElement("div");daily.style.cssText="font-weight:700;margin-top:5px";daily.textContent="Up to ₦"+((Number(p.reward_per_task_kobo||0)*Number(p.tasks_per_day||4))/100).toLocaleString("en-NG")+" per day if all tasks are approved";
-   const caption=document.createElement("p");caption.style.cssText="font-size:11px;opacity:.65;margin:9px 0 0";caption.textContent="Rewards are subject to task completion, admin review and available programme funding.";
+   const caption=document.createElement("p");caption.style.cssText="font-size:11px;opacity:.65;margin:9px 0 0";caption.textContent=currentDashboard?.activation_enabled?"Rewards depend on approved tasks and available programme funding.":"Activation will open after programme reward funding has been verified.";
    detail.append(count,reward,daily);
    const active=currentDashboard?.subscription?.plan_code===p.plan_code;
    const btn=document.createElement("button");btn.type="button";btn.className="btn primary";btn.style.cssText="width:100%;margin-top:14px;padding:11px";
-   btn.textContent=active?"Currently active":(currentDashboard?.subscription?"Another plan is active":"Activate for 31 days");
-   btn.disabled=!!currentDashboard?.subscription||active;
+   btn.textContent=active?"Currently active":(currentDashboard?.subscription?"Another plan is active":(currentDashboard?.activation_enabled?"Activate for 31 days":"Activation temporarily unavailable"));
+   btn.disabled=!currentDashboard?.activation_enabled||!!currentDashboard?.subscription||active;
    btn.onclick=async()=>{if(!confirm("Activate "+p.name+" for 31 days for ₦"+(Number(p.amount_kobo)/100).toLocaleString("en-NG")+"? The amount will be deducted from your wallet."))return;btn.disabled=true;btn.textContent="Activating…";try{await api("/api/plans/activate",{method:"POST",body:JSON.stringify({planCode:p.plan_code})});notify("Plan activated for 31 days.");render(await api("/api/me"))}catch(e){notify(e.message);btn.disabled=false;btn.textContent="Activate for 31 days"}};
    card.append(label,price,detail,caption,btn);el.append(card);
   });
