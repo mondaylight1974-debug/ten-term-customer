@@ -7,7 +7,35 @@ function tab(t){document.querySelectorAll(".tab").forEach(x=>x.classList.toggle(
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>tab(b.dataset.tab));
 const params=new URLSearchParams(location.search);if(params.get("ref"))$("#refField").value=params.get("ref");
 function copy(text,done){navigator.clipboard?.writeText(text).then(()=>notify(done)).catch(()=>notify(text))}
-function enter(){authView.classList.add("hidden");dash.classList.remove("hidden");$("#logoutBtn").classList.remove("hidden")}
+let dashboardNavReady=false;
+function setupDashboardNavigation(){
+ if(dashboardNavReady)return;dashboardNavReady=true;
+ const nav=$("#mobileBottomNav"),welcome=dash.querySelector(".welcome"),stats=dash.querySelector(".stats"),payment=dash.querySelector(".payment-card"),cards=dash.querySelector(".grid"),plans=$("#plansPanel"),content=dash.querySelector(".content");
+ const active=document.createElement("div");active.className="dashboard-page";active.id="page-active";
+ const plansPage=document.createElement("div");plansPage.className="dashboard-page hidden";plansPage.id="page-plans";
+ const withdrawalPage=document.createElement("div");withdrawalPage.className="dashboard-page hidden";withdrawalPage.id="page-withdrawal";
+ const profilePage=document.createElement("div");profilePage.className="dashboard-page hidden";profilePage.id="page-profile";
+ [welcome,stats,payment,cards].forEach(n=>n&&active.append(n));
+ const deposit=$("#depositPanel"),tasks=$("#tasksPanel"),withdraw=$("#withdrawPanel"),transactions=$("#transactionList")?.closest(".panel");
+ [deposit,tasks,transactions].forEach(n=>n&&active.append(n));
+ if(plans)plansPage.append(plans);
+ if(withdraw)withdrawalPage.append(withdraw);
+ const profile=document.createElement("section");profile.className="panel profile-panel";
+ profile.innerHTML='<div class="panel-head"><div><div class="eyebrow">YOUR ACCOUNT</div><h2>Profile</h2><p>Your Ten Term account information and referral details.</p></div></div><div class="profile-details"><div><small>Full name</small><strong id="profileName">—</strong></div><div><small>Ten Term ID</small><strong id="profileId">—</strong></div><div><small>Account status</small><strong>Active</strong></div><div><small>Referral link</small><strong id="profileReferral">—</strong></div></div><button type="button" class="btn ghost" id="profileCopyReferral">Copy referral link</button>';
+ profilePage.append(profile);[active,plansPage,withdrawalPage,profilePage].forEach(p=>dash.insertBefore(p,dash.querySelector("footer")));
+ if(content&&!content.children.length)content.remove();
+ nav?.classList.remove("hidden");
+ nav?.querySelectorAll("[data-page]").forEach(b=>b.addEventListener("click",()=>showDashboardPage(b.dataset.page)));
+ $("#profileCopyReferral")?.addEventListener("click",()=>copy($("#profileReferral").textContent,"Referral link copied."));
+ showDashboardPage("active");
+}
+function showDashboardPage(name){
+ const ids={active:"#page-active",plans:"#page-plans",withdrawal:"#page-withdrawal",profile:"#page-profile"};
+ Object.entries(ids).forEach(([key,sel])=>$(sel)?.classList.toggle("hidden",key!==name));
+ $("#mobileBottomNav")?.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===name));
+ window.scrollTo({top:0,behavior:"smooth"});
+}
+function enter(){authView.classList.add("hidden");dash.classList.remove("hidden");$("#logoutBtn").classList.remove("hidden");setupDashboardNavigation()}
 function ensureFundingButton(hasAccount){
  const note=$("#fundingConsentNote"),btn=$("#createFundingAccount");
  note.hidden=hasAccount;btn.hidden=hasAccount;
@@ -62,7 +90,7 @@ function renderTasks(tasks){
   info.append(title,desc);row.append(icon,info,reward);el.append(row);
  });
 }
-function render(d){renderPlans();const c=d.customer;$("#customerName").textContent=c.full_name.split(" ")[0];$("#accountId").textContent=c.account_id;$("#todayLabel").textContent=new Date().toLocaleDateString("en-NG",{weekday:"long",day:"numeric",month:"long",year:"numeric"});$("#refLink").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#payAccount").textContent=c.dva?.account_number||"Pending";$("#payBank").textContent=c.dva?.bank_name||"Funding account";$("#payStatus").textContent=c.dva?"Account name: "+c.dva.account_name:"Request your dedicated funding account below. Your name, email and phone will be shared securely with Paystack for account creation.";ensureFundingButton(!!c.dva);$("#bankName").value=c.withdrawal.bank_name||"";$("#accountNumber").value=c.withdrawal.account_number||"";$("#accountName").value=c.withdrawal.account_name||"";renderTasks(d.tasks||[]);renderTx(d.deposits||[],d.withdrawals||[])}
+function render(d){renderPlans();const c=d.customer;$("#profileName").textContent=c.full_name||"—";$("#profileId").textContent=c.account_id||"—";$("#profileReferral").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#customerName").textContent=c.full_name.split(" ")[0];$("#accountId").textContent=c.account_id;$("#todayLabel").textContent=new Date().toLocaleDateString("en-NG",{weekday:"long",day:"numeric",month:"long",year:"numeric"});$("#refLink").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#payAccount").textContent=c.dva?.account_number||"Pending";$("#payBank").textContent=c.dva?.bank_name||"Funding account";$("#payStatus").textContent=c.dva?"Account name: "+c.dva.account_name:"Request your dedicated funding account below. Your name, email and phone will be shared securely with Paystack for account creation.";ensureFundingButton(!!c.dva);$("#bankName").value=c.withdrawal.bank_name||"";$("#accountNumber").value=c.withdrawal.account_number||"";$("#accountName").value=c.withdrawal.account_name||"";renderTasks(d.tasks||[]);renderTx(d.deposits||[],d.withdrawals||[])}
 function renderTx(ds,ws){const rows=[...ds.map(x=>({type:"Deposit",...x})),...ws.map(x=>({type:"Withdrawal",...x}))].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));$("#transactionList").innerHTML=rows.length?rows.slice(0,15).map(x=>"<div class=\"row\"><div><strong>"+x.type+"</strong><small>"+new Date(x.created_at+"Z").toLocaleString()+"</small></div><div><strong>"+x.amount+"</strong><small class=\"status "+x.status+"\">"+x.status+"</small></div></div>").join(""):"<div class='empty'>No transactions yet.</div>"}
 $("#loginForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/login",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});enter();render(await api("/api/me"))}catch(x){msg(x.message)}};
 $("#registerForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/register",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});enter();render(await api("/api/me"));notify("Account created successfully.")}catch(x){msg(x.message)}};
