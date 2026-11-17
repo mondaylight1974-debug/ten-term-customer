@@ -261,3 +261,54 @@ footer{color:#8392aa}
 }
 @media(max-width:390px){.stats{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.welcome h1{font-size:26px}.payment-card .account-number-detail strong{font-size:22px}.brand{letter-spacing:.04em}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+
+
+/* High-visibility motion and official TEN TERM brand treatment */
+.brand-logo{display:block;width:56px;height:56px;object-fit:cover;border-radius:50%;border:2px solid rgba(23,166,201,.65);box-shadow:0 0 0 4px rgba(23,77,160,.1),0 0 20px rgba(0,155,255,.35);animation:tt-logo-pulse 2.8s ease-in-out infinite}
+.bg{position:fixed;inset:0;overflow:hidden}
+.bg:before,.bg:after{content:"";position:absolute;width:48vw;height:48vw;min-width:300px;min-height:300px;border-radius:50%;filter:blur(65px);opacity:.19;pointer-events:none;will-change:transform}
+.bg:before{left:-15%;top:4%;background:radial-gradient(circle,#168fe7 0%,#168fe7 18%,transparent 70%);animation:tt-aurora-one 11s ease-in-out infinite alternate}
+.bg:after{right:-16%;bottom:0;background:radial-gradient(circle,#14c8d8 0%,#14c8d8 18%,transparent 70%);animation:tt-aurora-two 13s ease-in-out infinite alternate}
+.topbar{position:sticky;top:0;z-index:50;backdrop-filter:blur(18px)}
+.brand{transition:transform .35s ease,filter .35s ease}
+.brand:hover{transform:translateY(-2px) scale(1.025);filter:drop-shadow(0 5px 14px rgba(0,145,255,.22))}
+.auth-welcome{animation:tt-panel-arrive .9s cubic-bezier(.18,.8,.2,1) both}
+.auth-welcome h1{animation:tt-title-glow 3.8s ease-in-out infinite}
+.auth-form-card{animation:tt-form-arrive 1s cubic-bezier(.18,.8,.2,1) .12s both}
+.auth-form-card .tabs{animation:tt-tab-glow 3s ease-in-out infinite}
+.auth-form-card .tab.active{animation:tt-active-tab 2.2s ease-in-out infinite}
+.welcome{animation:tt-hero-arrive .9s cubic-bezier(.18,.8,.2,1) both}
+.welcome:after{animation:tt-orbit-pulse 8s linear infinite}
+.stat{animation:tt-stat-pop .75s cubic-bezier(.2,.85,.25,1) both}
+.stats .stat:nth-child(2){animation-delay:.12s}.stats .stat:nth-child(3){animation-delay:.24s}.stats .stat:nth-child(4){animation-delay:.36s}
+.payment-card{animation:tt-wallet-arrive 1s cubic-bezier(.18,.8,.2,1) .18s both;box-shadow:0 20px 55px rgba(16,48,105,.22),0 0 0 1px rgba(60,180,255,.16)}
+.card{animation:tt-card-arrive .72s cubic-bezier(.2,.8,.2,1) both}
+.grid .card:nth-child(2){animation-delay:.09s}.grid .card:nth-child(3){animation-delay:.18s}.grid .card:nth-child(4){animation-delay:.27s}
+.panel{animation:tt-panel-arrive .75s cubic-bezier(.2,.8,.2,1) both}
+.btn{position:relative;overflow:hidden}
+.btn:after{content:"";position:absolute;top:-50%;left:-80%;width:45%;height:200%;transform:skewX(-25deg);background:linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent);transition:left .65s ease}
+.btn:hover:after{left:140%}
+.payment-card .account-number-detail{animation:tt-number-highlight 3.4s ease-in-out infinite}
+.bottom-nav{backdrop-filter:blur(18px);animation:tt-nav-rise .65s cubic-bezier(.2,.8,.2,1) both}
+.bottom-nav-item.active{box-shadow:0 5px 16px rgba(23,77,160,.14);animation:tt-nav-active 2.5s ease-in-out infinite}
+.withdrawal-panel{border-top:3px solid #1b78bd}
+.withdrawal-status-chip{animation:tt-chip-glow 3s ease-in-out infinite}
+@keyframes tt-logo-pulse{0%,100%{box-shadow:0 0 0 4px rgba(23,77,160,.1),0 0 14px rgba(0,155,255,.22)}50%{box-shadow:0 0 0 7px rgba(23,77,160,.13),0 0 28px rgba(0,190,255,.5)}}
+@keyframes tt-aurora-one{from{transform:translate3d(0,0,0) scale(.82)}to{transform:translate3d(35vw,20vh,0) scale(1.3)}}
+@keyframes tt-aurora-two{from{transform:translate3d(0,0,0) scale(1.1)}to{transform:translate3d(-30vw,-18vh,0) scale(.78)}}
+@keyframes tt-panel-arrive{from{opacity:0;transform:translateY(28px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes tt-form-arrive{from{opacity:0;transform:translateX(34px)}to{opacity:1;transform:translateX(0)}}
+@keyframes tt-hero-arrive{from{opacity:0;transform:translateY(24px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes tt-stat-pop{0%{opacity:0;transform:translateY(24px) scale(.94)}75%{opacity:1;transform:translateY(-3px) scale(1.01)}100%{transform:translateY(0) scale(1)}}
+@keyframes tt-card-arrive{from{opacity:0;transform:translateY(22px) rotateX(5deg)}to{opacity:1;transform:translateY(0) rotateX(0)}}
+@keyframes tt-wallet-arrive{from{opacity:0;transform:translateY(26px) scale(.97);filter:saturate(.65)}to{opacity:1;transform:translateY(0) scale(1);filter:saturate(1)}}
+@keyframes tt-title-glow{0%,100%{text-shadow:0 0 0 rgba(255,207,74,0)}50%{text-shadow:0 0 24px rgba(255,207,74,.35)}}
+@keyframes tt-tab-glow{0%,100%{box-shadow:0 0 0 rgba(23,77,160,0)}50%{box-shadow:0 0 20px rgba(23,77,160,.15)}}
+@keyframes tt-active-tab{0%,100%{filter:brightness(1)}50%{filter:brightness(1.12)}}
+@keyframes tt-orbit-pulse{to{transform:rotate(360deg)}}
+@keyframes tt-number-highlight{0%,100%{box-shadow:0 0 0 rgba(23,77,160,0)}50%{box-shadow:inset 0 0 22px rgba(23,77,160,.07)}}
+@keyframes tt-nav-rise{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes tt-nav-active{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+@keyframes tt-chip-glow{0%,100%{box-shadow:0 0 0 rgba(23,77,160,0)}50%{box-shadow:0 0 15px rgba(23,77,160,.16)}}
+@media(max-width:700px){.brand-logo{width:45px;height:45px}.bg:before,.bg:after{width:85vw;height:85vw;filter:blur(50px)}}
+@media(prefers-reduced-motion:reduce){.brand-logo,.bg:before,.bg:after,.auth-welcome,.auth-welcome h1,.auth-form-card,.auth-form-card .tabs,.auth-form-card .tab.active,.welcome,.welcome:after,.stat,.payment-card,.card,.panel,.bottom-nav,.bottom-nav-item.active,.payment-card .account-number-detail,.withdrawal-status-chip{animation:none!important}}
