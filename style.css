@@ -312,3 +312,27 @@ footer{color:#8392aa}
 @keyframes tt-chip-glow{0%,100%{box-shadow:0 0 0 rgba(23,77,160,0)}50%{box-shadow:0 0 15px rgba(23,77,160,.16)}}
 @media(max-width:700px){.brand-logo{width:45px;height:45px}.bg:before,.bg:after{width:85vw;height:85vw;filter:blur(50px)}}
 @media(prefers-reduced-motion:reduce){.brand-logo,.bg:before,.bg:after,.auth-welcome,.auth-welcome h1,.auth-form-card,.auth-form-card .tabs,.auth-form-card .tab.active,.welcome,.welcome:after,.stat,.payment-card,.card,.panel,.bottom-nav,.bottom-nav-item.active,.payment-card .account-number-detail,.withdrawal-status-chip{animation:none!important}}
+
+
+/* TEN TERM customer dashboard: clear, noticeable section transitions */
+.dashboard-page{position:relative;isolation:isolate}
+.dashboard-page:not(.hidden){animation:tt-page-transition .82s cubic-bezier(.16,.82,.24,1) both}
+.dashboard-page:not(.hidden)>.panel,
+.dashboard-page:not(.hidden)>.payment-card,
+.dashboard-page:not(.hidden)>.stats,
+.dashboard-page:not(.hidden)>.grid{animation:tt-section-rise .78s cubic-bezier(.16,.82,.24,1) both}
+.dashboard-page:not(.hidden)>.panel:nth-child(2){animation-delay:.1s}
+.dashboard-page:not(.hidden)>.panel:nth-child(3){animation-delay:.2s}
+.dashboard-page:not(.hidden)>.panel:nth-child(4){animation-delay:.3s}
+.dashboard-page:not(.hidden) .panel-head h2{animation:tt-heading-shine 2.8s ease-in-out .4s 1 both}
+.dashboard-page:not(.hidden) .profile-details>div{animation:tt-detail-rise .65s cubic-bezier(.2,.8,.2,1) both}
+.dashboard-page:not(.hidden) .profile-details>div:nth-child(2){animation-delay:.1s}
+.dashboard-page:not(.hidden) .profile-details>div:nth-child(3){animation-delay:.2s}
+.dashboard-page:not(.hidden) .profile-details>div:nth-child(4){animation-delay:.3s}
+.dashboard-page .panel,.dashboard-page .payment-card{transition:transform .28s ease,box-shadow .28s ease}
+.dashboard-page .panel:hover,.dashboard-page .payment-card:hover{transform:translateY(-3px);box-shadow:0 22px 48px rgba(15,55,120,.14)}
+@keyframes tt-page-transition{0%{opacity:0;transform:translateY(32px) scale(.985);filter:blur(5px)}65%{opacity:1;filter:blur(0);transform:translateY(-3px) scale(1.002)}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes tt-section-rise{0%{opacity:0;transform:translateY(24px)}100%{opacity:1;transform:translateY(0)}}
+@keyframes tt-detail-rise{0%{opacity:0;transform:translateX(-16px)}100%{opacity:1;transform:translateX(0)}}
+@keyframes tt-heading-shine{0%,100%{text-shadow:0 0 0 rgba(30,145,255,0)}45%{text-shadow:0 0 18px rgba(30,145,255,.42)}}
+@media(prefers-reduced-motion:reduce){.dashboard-page:not(.hidden),.dashboard-page:not(.hidden)>*,.dashboard-page:not(.hidden) .profile-details>div{animation:none!important;transition:none!important}}
