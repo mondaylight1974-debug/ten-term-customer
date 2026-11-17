@@ -104,7 +104,7 @@ function renderTasks(tasks,subscription,completions){
   const info=document.createElement("div");info.style.flex="1";
   const title=document.createElement("strong");title.textContent=t.title||"Available task";
   const rawDescription=String(t.description||"Follow the task instructions shown here.");
-  const urlMatch=rawDescription.match(/https:\/\/t\.me\/[^\s]+/i);
+  const urlMatch=rawDescription.match(/https?:\/\/[^\s]+/i);
   const taskUrl=urlMatch?urlMatch[0].replace(/[),.]+$/,""):null;
   const desc=document.createElement("p");desc.textContent=taskUrl?rawDescription.replace(taskUrl,"").trim()||"Open our Telegram channel.":rawDescription;
   const reward=document.createElement("span");reward.className="reward";reward.textContent=active?"₦"+(Number(subscription.plan?.reward_per_task_kobo||0)/100).toLocaleString("en-NG")+" per approved task":"Activate a plan to view reward";
@@ -113,10 +113,10 @@ function renderTasks(tasks,subscription,completions){
   if(previous){const state=document.createElement("p");state.className="message";state.textContent="Today's submission: "+previous.status.replaceAll("_"," ");row.append(state)}
   else if(taskUrl){
    const actions=document.createElement("div");actions.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 0 48px";
-   const open=document.createElement("button");open.type="button";open.className="btn ghost";open.textContent="Open Telegram channel";open.disabled=!active||used>=Number(subscription?.plan?.tasks_per_day||4);
+   const open=document.createElement("button");open.type="button";open.className="btn ghost";open.textContent="Open task link";open.disabled=!active||used>=Number(subscription?.plan?.tasks_per_day||4);
    const complete=document.createElement("button");complete.type="button";complete.className="btn primary";complete.textContent="Mark task complete";complete.hidden=true;complete.disabled=true;
-   open.onclick=()=>{window.open(taskUrl,"_blank","noopener,noreferrer");complete.hidden=false;complete.disabled=false;open.textContent="Telegram opened";};
-   complete.onclick=async()=>{complete.disabled=true;complete.textContent="Submitting…";try{await api("/api/tasks/"+t.id+"/submit",{method:"POST",body:JSON.stringify({proof:"Opened Telegram channel link: "+taskUrl})});notify("Telegram task submitted for review.");render(await api("/api/me"))}catch(err){notify(err.message);complete.disabled=false;complete.textContent="Mark task complete"}};
+   open.onclick=()=>{window.open(taskUrl,"_blank","noopener,noreferrer");complete.hidden=false;complete.disabled=false;open.textContent="Link opened";};
+   complete.onclick=async()=>{complete.disabled=true;complete.textContent="Submitting…";try{await api("/api/tasks/"+t.id+"/submit",{method:"POST",body:JSON.stringify({proof:"Opened task link: "+taskUrl})});notify("Task submitted for review.");render(await api("/api/me"))}catch(err){notify(err.message);complete.disabled=false;complete.textContent="Mark task complete"}};
    actions.append(open,complete);row.append(actions);
    if(!active){const hint=document.createElement("p");hint.className="message";hint.textContent="Activate a plan to submit daily tasks.";row.append(hint)}
   }else{
