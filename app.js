@@ -32,18 +32,22 @@ $("#createFundingAccount").onclick=async()=>{
   btn.disabled=false;btn.textContent="Try again after Paystack activation";
  }
 };
-function renderPlans(){
+async function renderPlans(){
  const el=$("#planCards");if(!el)return;
- const plans=[1500,2500,5000,15000];
  el.replaceChildren();
- plans.forEach((amount,index)=>{
-  const card=document.createElement("article");
-  card.style.cssText="border:1px solid rgba(130,150,170,.25);border-radius:14px;padding:18px;background:rgba(255,255,255,.035)";
-  const label=document.createElement("div");label.style.cssText="font-size:12px;opacity:.72;margin-bottom:8px";label.textContent="PLAN "+(index+1);
-  const price=document.createElement("strong");price.style.cssText="display:block;font-size:25px;letter-spacing:-.5px";price.textContent="₦"+amount.toLocaleString("en-NG");
-  const caption=document.createElement("p");caption.style.cssText="font-size:12px;opacity:.7;margin:8px 0 0";caption.textContent="Plan amount";
-  card.append(label,price,caption);el.append(card);
- });
+ const loading=document.createElement("div");loading.className="empty";loading.textContent="Loading plans…";el.append(loading);
+ try{
+  const d=await api("/api/plans"),plans=d.plans||[];el.replaceChildren();
+  if(!plans.length){const empty=document.createElement("div");empty.className="empty";empty.textContent="No plans are currently available. Please check again later.";el.append(empty);return}
+  plans.forEach(p=>{
+   const card=document.createElement("article");
+   card.style.cssText="border:1px solid rgba(130,150,170,.25);border-radius:14px;padding:18px;background:rgba(255,255,255,.035)";
+   const label=document.createElement("div");label.style.cssText="font-size:12px;opacity:.72;margin-bottom:8px";label.textContent=p.name;
+   const price=document.createElement("strong");price.style.cssText="display:block;font-size:25px;letter-spacing:-.5px";price.textContent="₦"+(Number(p.amount_kobo)/100).toLocaleString("en-NG");
+   const caption=document.createElement("p");caption.style.cssText="font-size:12px;opacity:.7;margin:8px 0 0";caption.textContent=p.description||"Plan amount";
+   card.append(label,price,caption);el.append(card);
+  });
+ }catch(e){el.replaceChildren();const error=document.createElement("div");error.className="empty";error.textContent="Plans could not load. Please refresh the page.";el.append(error)}
 }
 function renderTasks(tasks){
  const el=$("#taskList");if(!el)return;el.replaceChildren();
