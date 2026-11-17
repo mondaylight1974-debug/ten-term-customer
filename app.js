@@ -7,7 +7,7 @@ function tab(t){document.querySelectorAll(".tab").forEach(x=>x.classList.toggle(
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>tab(b.dataset.tab));
 const params=new URLSearchParams(location.search);if(params.get("ref"))$("#refField").value=params.get("ref");
 function copy(text,done){navigator.clipboard?.writeText(text).then(()=>notify(done)).catch(()=>notify(text))}
-let dashboardNavReady=false;
+let dashboardNavReady=false;let currentDashboard=null;
 function setupDashboardNavigation(){
  if(dashboardNavReady)return;dashboardNavReady=true;
  const nav=$("#mobileBottomNav"),welcome=dash.querySelector(".welcome"),stats=dash.querySelector(".stats"),payment=dash.querySelector(".payment-card"),cards=dash.querySelector(".grid"),plans=$("#plansPanel"),content=dash.querySelector(".content");
@@ -79,24 +79,45 @@ async function renderPlans(){
    const reward=document.createElement("div");reward.textContent="₦"+(Number(p.reward_per_task_kobo||0)/100).toLocaleString("en-NG")+" per approved task";
    const daily=document.createElement("div");daily.style.cssText="font-weight:700;margin-top:5px";daily.textContent="Up to ₦"+((Number(p.reward_per_task_kobo||0)*Number(p.tasks_per_day||4))/100).toLocaleString("en-NG")+" per day if all tasks are approved";
    const caption=document.createElement("p");caption.style.cssText="font-size:11px;opacity:.65;margin:9px 0 0";caption.textContent="Rewards are subject to task completion, admin review and available programme funding.";
-   detail.append(count,reward,daily);card.append(label,price,detail,caption);el.append(card);
+   detail.append(count,reward,daily);
+   const active=currentDashboard?.subscription?.plan_code===p.plan_code;
+   const btn=document.createElement("button");btn.type="button";btn.className="btn primary";btn.style.cssText="width:100%;margin-top:14px;padding:11px";
+   btn.textContent=active?"Currently active":(currentDashboard?.subscription?"Another plan is active":"Activate for 31 days");
+   btn.disabled=!!currentDashboard?.subscription||active;
+   btn.onclick=async()=>{if(!confirm("Activate "+p.name+" for 31 days for ₦"+(Number(p.amount_kobo)/100).toLocaleString("en-NG")+"? The amount will be deducted from your wallet."))return;btn.disabled=true;btn.textContent="Activating…";try{await api("/api/plans/activate",{method:"POST",body:JSON.stringify({planCode:p.plan_code})});notify("Plan activated for 31 days.");render(await api("/api/me"))}catch(e){notify(e.message);btn.disabled=false;btn.textContent="Activate for 31 days"}};
+   card.append(label,price,detail,caption,btn);el.append(card);
   });
  }catch(e){el.replaceChildren();const error=document.createElement("div");error.className="empty";error.textContent="Plans could not load. Please refresh the page.";el.append(error)}
 }
-function renderTasks(tasks){
+function renderTasks(tasks,subscription,completions){
  const el=$("#taskList");if(!el)return;el.replaceChildren();
- if(!tasks.length){const empty=document.createElement("div");empty.className="empty";empty.textContent="There are no active task plans right now. Please check again later.";el.append(empty);return}
+ const done=completions||[],today=new Date().toLocaleDateString("en-CA");
+ const used=done.filter(x=>x.work_date===today&&["submitted","approved","approved_pending_funding"].includes(x.status)).length;
+ const active=!!subscription;
+ const note=document.createElement("p");note.className="message";note.textContent=active?"Your plan is active until "+new Date(subscription.expires_at).toLocaleDateString("en-NG")+". Today's submissions: "+used+"/"+(subscription.plan?.tasks_per_day||4)+".":"Activate a plan to unlock task submissions.";
+ el.append(note);
+ if(!tasks.length){const empty=document.createElement("div");empty.className="empty";empty.textContent="There are no active tasks right now.";el.append(empty);return}
  tasks.forEach(t=>{
-  const row=document.createElement("div");row.className="task";
+  const row=document.createElement("div");row.className="task";row.style.cssText="display:block;padding:16px 0";
+  const top=document.createElement("div");top.style.cssText="display:flex;gap:12px;align-items:flex-start";
   const icon=document.createElement("div");icon.className="task-icon";icon.textContent="✓";
-  const info=document.createElement("div");
+  const info=document.createElement("div");info.style.flex="1";
   const title=document.createElement("strong");title.textContent=t.title||"Available task";
   const desc=document.createElement("p");desc.textContent=t.description||"Follow the task instructions shown here.";
-  const reward=document.createElement("span");reward.className="reward";reward.textContent=Number(t.reward_kobo)>0?t.reward:"Reward depends on your activated plan";
-  info.append(title,desc);row.append(icon,info,reward);el.append(row);
+  const reward=document.createElement("span");reward.className="reward";reward.textContent=active?"₦"+(Number(subscription.plan?.reward_per_task_kobo||0)/100).toLocaleString("en-NG")+" per approved task":"Activate a plan to view reward";
+  info.append(title,desc,reward);top.append(icon,info);row.append(top);
+  const previous=done.find(x=>Number(x.task_id)===Number(t.id)&&x.work_date===today);
+  if(previous){const state=document.createElement("p");state.className="message";state.textContent="Today's submission: "+previous.status.replaceAll("_"," ");row.append(state)}
+  else{
+   const form=document.createElement("form");form.style.cssText="margin:12px 0 0 48px";
+   const proof=document.createElement("textarea");proof.required=true;proof.minLength=10;proof.maxLength=3000;proof.rows=3;proof.placeholder="Describe or paste proof of your completed task";proof.style.cssText="width:100%;border:1px solid #dfe8e3;border-radius:10px;padding:10px;font:inherit";proof.disabled=!active||used>=Number(subscription?.plan?.tasks_per_day||4);
+   const submit=document.createElement("button");submit.type="submit";submit.className="btn primary";submit.style.cssText="margin-top:8px;padding:10px 14px";submit.textContent=!active?"Plan required":(used>=Number(subscription?.plan?.tasks_per_day||4)?"Daily limit reached":"Submit for review");submit.disabled=!active||used>=Number(subscription?.plan?.tasks_per_day||4);
+   form.append(proof,submit);form.onsubmit=async e=>{e.preventDefault();submit.disabled=true;submit.textContent="Submitting…";try{await api("/api/tasks/"+t.id+"/submit",{method:"POST",body:JSON.stringify({proof:proof.value})});notify("Task sent to admin for review.");render(await api("/api/me"))}catch(err){notify(err.message);submit.disabled=false;submit.textContent="Submit for review"}};row.append(form);
+  }
+  el.append(row);
  });
 }
-function render(d){renderPlans();const c=d.customer;$("#profileName").textContent=c.full_name||"—";$("#profileId").textContent=c.account_id||"—";$("#profileReferral").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#customerName").textContent=c.full_name.split(" ")[0];$("#accountId").textContent=c.account_id;$("#todayLabel").textContent=new Date().toLocaleDateString("en-NG",{weekday:"long",day:"numeric",month:"long",year:"numeric"});$("#refLink").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#payAccount").textContent=c.dva?.account_number||"Pending";$("#payBank").textContent=c.dva?.bank_name||"Funding account";$("#payStatus").textContent=c.dva?"Account name: "+c.dva.account_name:"Request your dedicated funding account below. Your name, email and phone will be shared securely with Paystack for account creation.";ensureFundingButton(!!c.dva);$("#bankName").value=c.withdrawal.bank_name||"";$("#accountNumber").value=c.withdrawal.account_number||"";$("#accountName").value=c.withdrawal.account_name||"";renderTasks(d.tasks||[]);renderTx(d.deposits||[],d.withdrawals||[])}
+function render(d){currentDashboard=d;renderPlans();const c=d.customer;$("#profileName").textContent=c.full_name||"—";$("#profileId").textContent=c.account_id||"—";$("#profileReferral").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#customerName").textContent=c.full_name.split(" ")[0];$("#accountId").textContent=c.account_id;$("#todayLabel").textContent=new Date().toLocaleDateString("en-NG",{weekday:"long",day:"numeric",month:"long",year:"numeric"});$("#refLink").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#payAccount").textContent=c.dva?.account_number||"Pending";$("#payBank").textContent=c.dva?.bank_name||"Funding account";$("#payStatus").textContent=c.dva?"Account name: "+c.dva.account_name:"Request your dedicated funding account below. Your name, email and phone will be shared securely with Paystack for account creation.";ensureFundingButton(!!c.dva);$("#bankName").value=c.withdrawal.bank_name||"";$("#accountNumber").value=c.withdrawal.account_number||"";$("#accountName").value=c.withdrawal.account_name||"";renderTasks(d.tasks||[],d.subscription,d.task_completions||[]);renderTx(d.deposits||[],d.withdrawals||[])}
 function renderTx(ds,ws){const rows=[...ds.map(x=>({type:"Deposit",...x})),...ws.map(x=>({type:"Withdrawal",...x}))].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));$("#transactionList").innerHTML=rows.length?rows.slice(0,15).map(x=>"<div class=\"row\"><div><strong>"+x.type+"</strong><small>"+new Date(x.created_at+"Z").toLocaleString()+"</small></div><div><strong>"+x.amount+"</strong><small class=\"status "+x.status+"\">"+x.status+"</small></div></div>").join(""):"<div class='empty'>No transactions yet.</div>"}
 $("#loginForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/login",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});enter();render(await api("/api/me"))}catch(x){msg(x.message)}};
 $("#registerForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/register",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});enter();render(await api("/api/me"));notify("Account created successfully.")}catch(x){msg(x.message)}};
@@ -105,4 +126,4 @@ $("#copyIdBtn").onclick=()=>copy($("#accountId").textContent,"Ten Term ID copied
 function jump(id){$(id).scrollIntoView({behavior:"smooth",block:"center"})}$("#openDeposit").onclick=()=>jump("#depositPanel");$("#openTasks").onclick=()=>jump("#tasksPanel");$("#openWithdraw").onclick=()=>jump("#withdrawPanel");
 $("#bankForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/profile/withdrawal",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});notify("Bank details saved.")}catch(x){$("#withdrawMessage").textContent=x.message}};
 $("#requestWithdraw").onclick=async()=>{try{const amount=Number($("#withdrawAmount").value);const body={amount,bankName:$("#bankName").value,accountNumber:$("#accountNumber").value,accountName:$("#accountName").value};const d=await api("/api/withdrawals",{method:"POST",body:JSON.stringify(body)});$("#withdrawMessage").textContent=d.message;notify("Withdrawal request submitted.");render(await api("/api/me"))}catch(x){$("#withdrawMessage").textContent=x.message}};
-(async()=>{try{enter();render(await api("/api/me"))}catch{authView.classList.remove("hidden");dash.classList.add("hidden")}})();
+(async()=>{try{const d=await api("/api/me");enter();render(d)}catch{authView.classList.remove("hidden");dash.classList.add("hidden");$("#mobileBottomNav")?.classList.add("hidden");$("#logoutBtn")?.classList.add("hidden")}})();
