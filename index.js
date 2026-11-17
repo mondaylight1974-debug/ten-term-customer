@@ -59,7 +59,7 @@ async function customer(id){const a=await db('customers?id=eq.'+encodeURICompone
 function safeCustomer(c){return {id:c.id,account_id:c.account_id,full_name:c.full_name,email:c.email,phone:c.phone,referral_code:c.referral_code,referral_link:APP_URL+'/?ref='+encodeURIComponent(c.referral_code),dva:c.dva_account_number?{account_number:c.dva_account_number,bank_name:c.dva_bank_name,account_name:c.dva_account_name}:null,withdrawal:{bank_name:c.withdrawal_bank_name||'',account_number:c.withdrawal_account_number||'',account_name:c.withdrawal_account_name||''},created_at:c.created_at};}
 async function dashboard(id){
  const c=await customer(id);if(!c)throw Error('Customer not found.');
- const [ds,ws,ls,ts,subs,comps,settings]=await Promise.all([
+ const [ds,ws,ls,ts,subs,comps,settings,refs,rws]=await Promise.all([
  db('deposits?customer_id=eq.'+id+'&select=id,amount_kobo,status,provider_reference,created_at&order=created_at.desc&limit=20'),
  db('withdrawals?customer_id=eq.'+id+'&select=id,amount_kobo,status,bank_name,account_number,account_name,created_at&order=created_at.desc&limit=20'),
  db('wallet_ledger?customer_id=eq.'+id+'&select=amount_kobo'),
