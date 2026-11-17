@@ -28,3 +28,34 @@
  .profile-details{grid-template-columns:1fr}
 }
 @media(min-width:701px){body{padding-bottom:100px}.bottom-nav{position:fixed;z-index:30;left:50%;transform:translateX(-50%);bottom:18px;width:min(760px,calc(100% - 40px));display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding:9px;border:1px solid rgba(8,27,23,.1);border-radius:19px;background:rgba(255,255,255,.96);box-shadow:0 12px 35px rgba(7,39,28,.18);backdrop-filter:blur(18px)}.bottom-nav.hidden{display:none!important}.bottom-nav-item{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px;border:0;border-radius:12px;background:transparent;color:#718079;font-size:11px;font-weight:800}.bottom-nav-item.active{background:#e8f8f0;color:#087a55}}
+
+
+/* Clear, phone-shaped Fund Wallet account card */
+.payment-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.9fr);align-items:stretch;gap:22px;padding:clamp(18px,3vw,30px);border-radius:26px;min-width:0}
+.payment-card>div:first-child{min-width:0;align-self:center}
+.payment-card h2{overflow-wrap:anywhere}
+.payment-card p{max-width:560px;overflow-wrap:anywhere}
+.account-box{display:grid;gap:0;min-width:0;width:100%;padding:0;overflow:hidden;border-radius:20px;background:#fff;color:#10231d;border:1px solid rgba(255,255,255,.5);box-shadow:0 12px 30px rgba(0,0,0,.12)}
+.account-detail{padding:14px 17px;border-bottom:1px solid #e8efeb;min-width:0}
+.account-detail small{display:block;color:#64756e;font-size:10px;font-weight:800;letter-spacing:.12em;margin-bottom:6px}
+.account-detail strong{display:block;color:#10231d;font-size:clamp(15px,2vw,19px);font-weight:800;line-height:1.35;overflow-wrap:anywhere;word-break:break-word}
+.account-number-detail{background:#f3faf6;border-bottom:0}
+.account-number-detail strong{font-size:clamp(23px,3vw,30px);letter-spacing:.045em;font-variant-numeric:tabular-nums}
+.account-box .lightbtn{margin:0 14px 14px;background:#0b674b;color:#fff;min-height:46px;border-radius:12px}
+.payment-card #payStatus{max-width:100%;overflow-wrap:anywhere}
+#fundingAmount{width:min(100%,300px);max-width:100%!important;min-height:46px;font-size:16px}
+@media(max-width:700px){
+ .payment-card{display:flex;flex-direction:column;gap:18px;width:100%;padding:18px;border-radius:20px}
+ .payment-card>div:first-child{width:100%}
+ .account-box{width:100%;min-width:0;border-radius:16px}
+ .account-detail{padding:13px 14px}
+ .account-number-detail strong{font-size:25px}
+ .payment-card h2{font-size:23px}
+ .payment-card p{font-size:13px}
+ #fundingAmount{width:100%;max-width:100%!important}
+}
+@media(max-width:360px){
+ .dashboard{padding-left:12px;padding-right:12px}
+ .payment-card{padding:15px}
+ .account-number-detail strong{font-size:21px;letter-spacing:.02em}
+}
