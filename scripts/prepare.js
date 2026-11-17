@@ -18,7 +18,7 @@ if(!fs.existsSync(publicDir)) throw new Error('The customer/admin public assets 
 // The maintained root files are the current customer portal. Overlay them
 // after archive extraction so the live site never serves the stale ZIP copy.
 fs.mkdirSync(publicDir,{recursive:true});
-for(const file of ['index.html','app.js','style.css']){
+for(const file of ['index.html','app.js','style.css','admin.html']){
   const source=path.join(root,file);
   if(!fs.existsSync(source)) throw new Error('Required current frontend file is missing: '+file);
   fs.copyFileSync(source,path.join(publicDir,file));
