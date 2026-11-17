@@ -32,6 +32,19 @@ $("#createFundingAccount").onclick=async()=>{
   btn.disabled=false;btn.textContent="Try again after Paystack activation";
  }
 };
+function renderPlans(){
+ const el=$("#planCards");if(!el)return;
+ const plans=[1500,2500,5000,15000];
+ el.replaceChildren();
+ plans.forEach((amount,index)=>{
+  const card=document.createElement("article");
+  card.style.cssText="border:1px solid rgba(130,150,170,.25);border-radius:14px;padding:18px;background:rgba(255,255,255,.035)";
+  const label=document.createElement("div");label.style.cssText="font-size:12px;opacity:.72;margin-bottom:8px";label.textContent="PLAN "+(index+1);
+  const price=document.createElement("strong");price.style.cssText="display:block;font-size:25px;letter-spacing:-.5px";price.textContent="₦"+amount.toLocaleString("en-NG");
+  const caption=document.createElement("p");caption.style.cssText="font-size:12px;opacity:.7;margin:8px 0 0";caption.textContent="Plan amount";
+  card.append(label,price,caption);el.append(card);
+ });
+}
 function renderTasks(tasks){
  const el=$("#taskList");if(!el)return;el.replaceChildren();
  if(!tasks.length){const empty=document.createElement("div");empty.className="empty";empty.textContent="There are no active task plans right now. Please check again later.";el.append(empty);return}
@@ -45,7 +58,7 @@ function renderTasks(tasks){
   info.append(title,desc);row.append(icon,info,reward);el.append(row);
  });
 }
-function render(d){const c=d.customer;$("#customerName").textContent=c.full_name.split(" ")[0];$("#accountId").textContent=c.account_id;$("#todayLabel").textContent=new Date().toLocaleDateString("en-NG",{weekday:"long",day:"numeric",month:"long",year:"numeric"});$("#refLink").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#payAccount").textContent=c.dva?.account_number||"Pending";$("#payBank").textContent=c.dva?.bank_name||"Funding account";$("#payStatus").textContent=c.dva?"Account name: "+c.dva.account_name:"Request your dedicated funding account below. Your name, email and phone will be shared securely with Paystack for account creation.";ensureFundingButton(!!c.dva);$("#bankName").value=c.withdrawal.bank_name||"";$("#accountNumber").value=c.withdrawal.account_number||"";$("#accountName").value=c.withdrawal.account_name||"";renderTasks(d.tasks||[]);renderTx(d.deposits||[],d.withdrawals||[])}
+function render(d){renderPlans();const c=d.customer;$("#customerName").textContent=c.full_name.split(" ")[0];$("#accountId").textContent=c.account_id;$("#todayLabel").textContent=new Date().toLocaleDateString("en-NG",{weekday:"long",day:"numeric",month:"long",year:"numeric"});$("#refLink").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#payAccount").textContent=c.dva?.account_number||"Pending";$("#payBank").textContent=c.dva?.bank_name||"Funding account";$("#payStatus").textContent=c.dva?"Account name: "+c.dva.account_name:"Request your dedicated funding account below. Your name, email and phone will be shared securely with Paystack for account creation.";ensureFundingButton(!!c.dva);$("#bankName").value=c.withdrawal.bank_name||"";$("#accountNumber").value=c.withdrawal.account_number||"";$("#accountName").value=c.withdrawal.account_name||"";renderTasks(d.tasks||[]);renderTx(d.deposits||[],d.withdrawals||[])}
 function renderTx(ds,ws){const rows=[...ds.map(x=>({type:"Deposit",...x})),...ws.map(x=>({type:"Withdrawal",...x}))].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));$("#transactionList").innerHTML=rows.length?rows.slice(0,15).map(x=>"<div class=\"row\"><div><strong>"+x.type+"</strong><small>"+new Date(x.created_at+"Z").toLocaleString()+"</small></div><div><strong>"+x.amount+"</strong><small class=\"status "+x.status+"\">"+x.status+"</small></div></div>").join(""):"<div class='empty'>No transactions yet.</div>"}
 $("#loginForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/login",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});enter();render(await api("/api/me"))}catch(x){msg(x.message)}};
 $("#registerForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/register",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});enter();render(await api("/api/me"));notify("Account created successfully.")}catch(x){msg(x.message)}};
