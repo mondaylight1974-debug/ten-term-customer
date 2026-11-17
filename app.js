@@ -39,27 +39,25 @@ function showDashboardPage(name){
 }
 function enter(){authView.classList.add("hidden");dash.classList.remove("hidden");$("#logoutBtn").classList.remove("hidden");setupDashboardNavigation()}
 function ensureFundingButton(hasAccount){
- const note=$("#fundingConsentNote"),btn=$("#createFundingAccount");
- note.hidden=hasAccount;btn.hidden=hasAccount;
- note.textContent=hasAccount?"A temporary Monnify account is active for the exact amount shown. Transfer before it expires.":"Enter your amount, then generate a temporary account. The account is unique to your deposit and expires in about 40 minutes.";
+ const note=$("#fundingHint"),btn=$("#createFundingAccount"),copy=$("#copyPayBtn");
+ if(note)note.textContent=hasAccount?"Transfer the exact amount you entered to the account shown.":"Enter a whole-naira amount of at least ₦100.";
+ if(btn){btn.hidden=hasAccount;btn.disabled=false;btn.textContent="Generate account";}
+ if(copy)copy.disabled=!hasAccount;
 }
 $("#createFundingAccount").onclick=async()=>{
- const btn=$("#createFundingAccount"),status=$("#payStatus"),bank=$("#payBank");
- btn.disabled=true;btn.textContent="Requesting account…";
- status.textContent="Contacting your secure payment provider. Please wait; do not make a transfer until an account number appears here.";
+ const btn=$("#createFundingAccount"),status=$("#payStatus");
+ const amount=Number($("#fundingAmount").value);
+ if(!Number.isInteger(amount)||amount<100){status.textContent="Please enter a whole-naira amount of at least ₦100.";return;}
+ btn.disabled=true;btn.textContent="Generating account…";
+ status.textContent="Please wait while your account details are prepared.";
  try{
-  const amount=Number($("#fundingAmount").value);if(!Number.isInteger(amount)||amount<100){throw new Error("Enter a whole-naira amount of at least ₦100.");}const d=await api("/api/funding-account/create",{method:"POST",body:JSON.stringify({consent:true,amount})});
-  notify(d.message||"Funding account request completed.");
+  await api("/api/funding-account/create",{method:"POST",body:JSON.stringify({consent:true,amount})});
   render(await api("/api/me"));
+  notify("Your bank transfer details are ready.");
  }catch(e){
-  const detail=String(e.message||"Funding account request failed.");
-  const unavailable=/Dedicated NUBAN is not available/i.test(detail);
-  bank.textContent=unavailable?"Funding account unavailable":"Funding account not created";
-  status.textContent=unavailable
-   ?"Your personal funding account is not available yet. Please try again later. Do not transfer money until your account number appears here."
-   :detail;
-  notify(unavailable?"Your funding account is not available yet.":detail);
-  btn.disabled=false;btn.textContent="Try again later";
+  status.textContent="We couldn't create your funding account right now. Please try again.";
+  btn.disabled=false;btn.textContent="Try again";
+  notify("Account creation failed. Please try again.");
  }
 };
 async function renderPlans(){
@@ -130,12 +128,12 @@ function renderTasks(tasks,subscription,completions){
 }
 function lastDayOfMonthLagos(){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Lagos',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const v=Object.fromEntries(parts.map(x=>[x.type,x.value]));const day=Number(v.day),last=new Date(Date.UTC(Number(v.year),Number(v.month),0)).getUTCDate();return day===last;}
 function renderReferral(d){const r=d.referrals||{},active=!!d.subscription,available=Number(r.available_kobo||0),btn=$("#referralWithdrawBtn"),summary=$("#referralSummary"),message=$("#referralMessage");if(summary)summary.textContent="Invited accounts: "+Number(r.count||0)+" • Total earned: "+(r.earned||"₦0.00")+" • Available: "+(r.available||"₦0.00");if(message){message.textContent=!active?"Activate a plan before referring new customers to earn the ₦1,000 referral reward. Referral earnings are separate from your wallet.":(lastDayOfMonthLagos()?"Today is the month-end referral withdrawal day. Save your bank details and request your available referral payout.":"Referral withdrawals open only on the last calendar day of each month. Your referral earnings are kept separate from your wallet.");}if(btn){btn.disabled=!active||available<100000||!lastDayOfMonthLagos();btn.textContent=!active?"Activate a plan first":(available<100000?"₦1,000 minimum required":(lastDayOfMonthLagos()?"Withdraw referral earnings":"Withdraw on month-end"));}}
-function render(d){currentDashboard=d;renderPlans();$("#walletBalance").textContent=d.balance||"₦0.00";const c=d.customer;$("#profileName").textContent=c.full_name||"—";$("#profileId").textContent=c.account_id||"—";$("#profileReferral").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#customerName").textContent=c.full_name.split(" ")[0];$("#accountId").textContent=c.account_id;$("#todayLabel").textContent=new Date().toLocaleDateString("en-NG",{weekday:"long",day:"numeric",month:"long",year:"numeric"});$("#refLink").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;renderReferral(d);const fa=d.funding_account;$("#payAccount").textContent=fa?.account_number||"No active transfer account";$("#payBank").textContent=fa?.bank_name||"Monnify transfer account";$("#payBankCard").textContent=fa?.bank_name||"Awaiting bank assignment";$("#payAccountName").textContent=fa?.account_name||"Awaiting account name";$("#payStatus").textContent=fa?"Account name: "+fa.account_name+" • Exact transfer: ₦"+Number(fa.amount).toLocaleString("en-NG")+" • Expires: "+new Date(fa.expires_at).toLocaleTimeString("en-NG",{hour:"2-digit",minute:"2-digit"}):"Enter an amount and generate a fresh temporary account. Only transfer to the account shown here.";$("#funding-number").textContent=fa?.account_number||"No active account";$("#funding-bank").textContent=fa?.bank_name||"Your assigned bank";$("#funding-name").textContent=fa?.account_name||"Your assigned account name";$("#funding-status").textContent=fa?"Waiting for verified transfer":"Generate a temporary account to begin";ensureFundingButton(!!fa);$("#bankName").value=c.withdrawal.bank_name||"";$("#accountNumber").value=c.withdrawal.account_number||"";$("#accountName").value=c.withdrawal.account_name||"";renderTasks(d.tasks||[],d.subscription,d.task_completions||[]);renderTx(d.deposits||[],d.withdrawals||[])}
+function render(d){currentDashboard=d;renderPlans();$("#walletBalance").textContent=d.balance||"₦0.00";const c=d.customer;$("#profileName").textContent=c.full_name||"—";$("#profileId").textContent=c.account_id||"—";$("#profileReferral").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;$("#customerName").textContent=c.full_name.split(" ")[0];$("#accountId").textContent=c.account_id;$("#todayLabel").textContent=new Date().toLocaleDateString("en-NG",{weekday:"long",day:"numeric",month:"long",year:"numeric"});$("#refLink").textContent=c.referral_link||location.origin+"/?ref="+c.referral_code;renderReferral(d);const fa=d.funding_account;$("#payAccount").textContent=fa?.account_number||"Not generated yet";$("#payBankCard").textContent=fa?.bank_name||"Not generated yet";$("#payAccountName").textContent=fa?.account_name||"Not generated yet";$("#payStatus").textContent=fa?"Transfer exactly ₦"+Number(fa.amount).toLocaleString("en-NG")+" to the account details shown above.":"Your bank transfer details will appear here after you generate an account.";$("#funding-number").textContent=fa?.account_number||"No active account";$("#funding-bank").textContent=fa?.bank_name||"Your assigned bank";$("#funding-name").textContent=fa?.account_name||"Your assigned account name";$("#funding-status").textContent=fa?"Waiting for verified transfer":"Generate a funding account to begin";ensureFundingButton(!!fa);$("#bankName").value=c.withdrawal.bank_name||"";$("#accountNumber").value=c.withdrawal.account_number||"";$("#accountName").value=c.withdrawal.account_name||"";renderTasks(d.tasks||[],d.subscription,d.task_completions||[])}
 function renderTx(ds,ws){const rows=[...ds.map(x=>({type:"Deposit",...x})),...ws.map(x=>({type:"Withdrawal",...x}))].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));$("#transactionList").innerHTML=rows.length?rows.slice(0,15).map(x=>"<div class=\"row\"><div><strong>"+x.type+"</strong><small>"+new Date(x.created_at+"Z").toLocaleString()+"</small></div><div><strong>"+x.amount+"</strong><small class=\"status "+x.status+"\">"+x.status+"</small></div></div>").join(""):"<div class='empty'>No transactions yet.</div>"}
 $("#loginForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/login",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});enter();render(await api("/api/me"))}catch(x){msg(x.message)}};
 $("#registerForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/register",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});enter();render(await api("/api/me"));notify("Account created successfully.")}catch(x){msg(x.message)}};
 $("#logoutBtn").onclick=async()=>{await api("/api/logout",{method:"POST"});location.reload()};
-$("#copyIdBtn").onclick=()=>copy($("#accountId").textContent,"Ten Term ID copied.");$("#copyPayBtn").onclick=()=>copy($("#payAccount").textContent,"Payment account copied.");$("#copyRefBtn").onclick=()=>copy($("#refLink").textContent,"Referral link copied.");
+$("#copyIdBtn").onclick=()=>copy($("#accountId").textContent,"Ten Term ID copied.");$("#copyPayBtn").onclick=()=>{if($("#payAccount").textContent!=="Not generated yet")copy($("#payAccount").textContent,"Account number copied.");};$("#copyRefBtn").onclick=()=>copy($("#refLink").textContent,"Referral link copied.");
 $("#referralWithdrawBtn")?.addEventListener("click",async()=>{const b=$("#referralWithdrawBtn"),m=$("#referralMessage");b.disabled=true;b.textContent="Submitting…";try{const r=await api("/api/referrals/withdraw",{method:"POST",body:JSON.stringify({})});if(m)m.textContent=r.message||"Referral withdrawal submitted.";notify("Referral withdrawal submitted.");render(await api("/api/me"))}catch(e){if(m)m.textContent=e.message;notify(e.message);renderReferral(currentDashboard)}});
 function jump(id){$(id).scrollIntoView({behavior:"smooth",block:"center"})}$("#openDeposit").onclick=()=>jump("#depositPanel");$("#openTasks").onclick=()=>jump("#tasksPanel");$("#openWithdraw").onclick=()=>jump("#withdrawPanel");
 $("#bankForm").onsubmit=async e=>{e.preventDefault();try{await api("/api/profile/withdrawal",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});notify("Bank details saved.")}catch(x){$("#withdrawMessage").textContent=x.message}};
