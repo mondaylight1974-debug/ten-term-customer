@@ -71,11 +71,15 @@ async function renderPlans(){
   if(!plans.length){const empty=document.createElement("div");empty.className="empty";empty.textContent="No plans are currently available. Please check again later.";el.append(empty);return}
   plans.forEach(p=>{
    const card=document.createElement("article");
-   card.style.cssText="border:1px solid rgba(130,150,170,.25);border-radius:14px;padding:18px;background:rgba(255,255,255,.035)";
-   const label=document.createElement("div");label.style.cssText="font-size:12px;opacity:.72;margin-bottom:8px";label.textContent=p.name;
-   const price=document.createElement("strong");price.style.cssText="display:block;font-size:25px;letter-spacing:-.5px";price.textContent="₦"+(Number(p.amount_kobo)/100).toLocaleString("en-NG");
-   const caption=document.createElement("p");caption.style.cssText="font-size:12px;opacity:.7;margin:8px 0 0";caption.textContent=p.description||"Plan amount";
-   card.append(label,price,caption);el.append(card);
+   card.style.cssText="border:1px solid rgba(130,150,170,.28);border-radius:18px;padding:18px;background:linear-gradient(145deg,rgba(70,85,150,.17),rgba(255,255,255,.035));box-shadow:0 10px 28px rgba(0,0,0,.16)";
+   const label=document.createElement("div");label.style.cssText="font-size:12px;letter-spacing:.12em;text-transform:uppercase;opacity:.78;margin-bottom:8px";label.textContent=p.name;
+   const price=document.createElement("strong");price.style.cssText="display:block;font-size:27px;letter-spacing:-.7px";price.textContent="₦"+(Number(p.amount_kobo)/100).toLocaleString("en-NG");
+   const detail=document.createElement("div");detail.style.cssText="margin-top:12px;font-size:13px;line-height:1.65";
+   const count=document.createElement("div");count.textContent=(Number(p.tasks_per_day)||4)+" tasks every day";
+   const reward=document.createElement("div");reward.textContent="₦"+(Number(p.reward_per_task_kobo||0)/100).toLocaleString("en-NG")+" per approved task";
+   const daily=document.createElement("div");daily.style.cssText="font-weight:700;margin-top:5px";daily.textContent="Up to ₦"+((Number(p.reward_per_task_kobo||0)*Number(p.tasks_per_day||4))/100).toLocaleString("en-NG")+" per day if all tasks are approved";
+   const caption=document.createElement("p");caption.style.cssText="font-size:11px;opacity:.65;margin:9px 0 0";caption.textContent="Rewards are subject to task completion, admin review and available programme funding.";
+   detail.append(count,reward,daily);card.append(label,price,detail,caption);el.append(card);
   });
  }catch(e){el.replaceChildren();const error=document.createElement("div");error.className="empty";error.textContent="Plans could not load. Please refresh the page.";el.append(error)}
 }
