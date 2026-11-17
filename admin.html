@@ -1,11 +1,52 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ten Term Admin</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101f43"><title>TEN TERM • Admin</title>
+
 <style>
-:root{color-scheme:dark;--bg:#080b13;--panel:#111827;--line:#263244;--muted:#9ba9bc;--accent:#9b87ff;--good:#37c98a;--bad:#ff817c}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top right,#202044 0,transparent 40%),var(--bg);color:#f5f7fb;font:15px system-ui,Arial}main{max-width:1050px;margin:auto;padding:24px 16px 60px}h1,h2,h3,p{margin-top:0}h1{font-size:28px}h2{font-size:20px}.muted{color:var(--muted)}.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin:16px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.stat{padding:14px;border-radius:12px;background:#0b1220;border:1px solid var(--line)}.stat strong{font-size:23px;display:block;margin-top:6px}label{display:block;color:var(--muted);font-size:13px;margin:10px 0 5px}input,textarea{width:100%;background:#080d18;color:white;border:1px solid #354258;border-radius:9px;padding:12px;font:inherit}textarea{min-height:75px;resize:vertical}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.row>*{flex:1}.btn{border:0;border-radius:9px;padding:11px 15px;font-weight:700;background:var(--accent);color:#100d22;cursor:pointer}.btn.secondary{background:#263449;color:white}.btn.danger{background:#572c35;color:#ffd9d9}.btn:disabled{opacity:.5}.task,.withdrawal{border-top:1px solid var(--line);padding:14px 0}.task:first-child,.withdrawal:first-child{border-top:0}.pill{font-size:12px;border-radius:99px;padding:4px 9px;background:#263449;color:#dce7f7}.pill.on{background:#164c3b;color:#a8f4d2}.hidden{display:none!important}.message{margin-top:10px;color:var(--muted);min-height:20px}.plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}.plan{background:#0b1220;border:1px solid var(--line);border-radius:12px;padding:14px}.plan strong{font-size:21px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+:root{color-scheme:dark;--bg:#081326;--panel:#101f3b;--line:#263d62;--muted:#a9bad3;--accent:#66c8ef;--good:#42d5a0;--bad:#ff8585}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 12% 0%,rgba(23,77,160,.35),transparent 38%),radial-gradient(ellipse at 92% 12%,rgba(8,126,174,.2),transparent 32%),#081326;color:#f4f8ff;font:15px/1.55 Inter,ui-sans-serif,system-ui,Arial}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:38px 38px;mask-image:linear-gradient(to bottom,black,transparent 85%)}
+main{position:relative;max-width:1180px;margin:auto;padding:28px 20px 90px}
+h1,h2,h3,p{margin-top:0}h1{font-size:clamp(26px,4vw,36px);letter-spacing:-.04em;margin:4px 0}h2{font-size:21px;letter-spacing:-.02em}
+.muted{color:var(--muted)}.admin-subtitle{color:#9fb4d1;margin:5px 0 0;font-size:13px}
+.panel{background:linear-gradient(145deg,rgba(17,34,63,.96),rgba(12,26,50,.96));border:1px solid rgba(132,177,230,.17);border-radius:20px;padding:22px;margin:17px 0;box-shadow:0 14px 40px rgba(0,0,0,.14);animation:admin-in .5s both}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:13px}
+.stat{padding:17px;border-radius:15px;background:linear-gradient(145deg,#142b50,#0d1b35);border:1px solid #2a456d;color:#c9dcf5;font-size:12px;letter-spacing:.04em}
+.stat strong{font-size:clamp(22px,3vw,29px);display:block;margin-top:7px;color:#fff;letter-spacing:-.03em}
+label{display:block;color:#b7c8df;font-size:13px;font-weight:650;margin:12px 0 6px}
+input,textarea{width:100%;background:#09162c;color:#fff;border:1px solid #314a70;border-radius:11px;padding:13px;font:inherit;outline:none;transition:border-color .2s,box-shadow .2s}
+input:focus,textarea:focus{border-color:#66c8ef;box-shadow:0 0 0 4px rgba(102,200,239,.12)}
+textarea{min-height:85px;resize:vertical}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.row>*{flex:1;min-width:0}
+.btn{border:0;border-radius:11px;padding:12px 17px;font-weight:850;background:linear-gradient(100deg,#66c8ef,#338ed0);color:#07182e;cursor:pointer;transition:transform .2s,filter .2s,box-shadow .2s;box-shadow:0 8px 22px rgba(30,128,190,.15)}
+.btn:hover{transform:translateY(-2px);filter:brightness(1.08);box-shadow:0 12px 25px rgba(30,128,190,.23)}
+.btn.secondary{background:#203a60;color:#eaf4ff;box-shadow:none}.btn.danger{background:#582e42;color:#ffdce4;box-shadow:none}.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.task,.withdrawal{border-top:1px solid #263d5e;padding:16px 0}.task:first-child,.withdrawal:first-child{border-top:0}
+.pill{font-size:12px;border-radius:99px;padding:5px 10px;background:#263e62;color:#e3efff}.pill.on{background:#164c3b;color:#a8f4d2}
+.hidden{display:none!important}.message{margin-top:10px;color:var(--muted);min-height:20px}
+.plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.plan{background:linear-gradient(145deg,#142b50,#0b1a33);border:1px solid #2a456d;border-radius:15px;padding:16px;transition:transform .25s,box-shadow .25s}.plan:hover{transform:translateY(-3px);box-shadow:0 12px 28px rgba(0,0,0,.18)}.plan strong{font-size:23px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.admin-brand{display:flex;align-items:center;gap:14px}.admin-mark{width:46px;height:46px;display:grid;place-items:center;border-radius:15px;background:linear-gradient(145deg,#66c8ef,#174da0);color:white;font-size:23px;font-weight:950;box-shadow:0 8px 25px rgba(29,134,196,.25)}.admin-mark.large{width:58px;height:58px;font-size:28px}
+.admin-login{display:grid;grid-template-columns:1fr 1fr;overflow:hidden;max-width:900px;margin:7vh auto 30px;padding:0;min-height:420px}
+.admin-login-welcome{position:relative;overflow:hidden;isolation:isolate;padding:clamp(28px,5vw,54px);display:flex;flex-direction:column;justify-content:center;background:linear-gradient(145deg,#10234b,#174da0 65%,#087eae)}
+.admin-login-welcome:before{content:"";position:absolute;z-index:-1;inset:-30%;background:linear-gradient(125deg,transparent 43%,rgba(255,255,255,.12) 44%,transparent 45%);transform:translateX(-70%);animation:admin-sweep 8s ease-in-out infinite}
+.admin-kicker{margin-top:24px;color:#b8eaff;font-size:10px;font-weight:900;letter-spacing:.18em}.admin-login-welcome h2{font-size:clamp(32px,4vw,44px);margin:8px 0;color:#fff}.admin-login-welcome p{max-width:300px;color:#dcecff}
+.admin-orbit{position:absolute;width:230px;height:230px;right:-100px;bottom:-115px;border:1px solid rgba(255,255,255,.25);border-radius:50%;box-shadow:0 0 0 25px rgba(255,255,255,.04),0 0 0 55px rgba(255,255,255,.025);animation:admin-spin 22s linear infinite}
+.admin-login-form{padding:clamp(25px,4vw,48px);align-self:center}.admin-login-form h2{font-size:25px}.admin-login-form .btn{width:100%;margin-top:10px}
+.admin-login-form form{animation:admin-in .65s both}
+#dashboard>.panel{scroll-margin-top:20px}
+#dashboard>.panel h2{display:flex;align-items:center;gap:9px}
+#dashboard>.panel h2:before{content:"";width:4px;height:21px;border-radius:8px;background:linear-gradient(#66c8ef,#174da0)}
+#logout{min-width:100px}
+@keyframes admin-in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes admin-spin{to{transform:rotate(360deg)}}
+@keyframes admin-sweep{0%,65%,100%{transform:translateX(-70%)}80%{transform:translateX(70%)}}
+@media(max-width:700px){main{padding:18px 12px 70px}.admin-login{grid-template-columns:1fr;margin:18px 0;min-height:0}.admin-login-welcome{min-height:205px;padding:24px}.admin-login-welcome .admin-mark{width:44px;height:44px}.admin-kicker{margin-top:14px}.admin-login-welcome h2{font-size:32px}.admin-login-form{padding:23px}.panel{padding:17px;border-radius:16px}.row{display:grid;grid-template-columns:1fr}.admin-brand{align-items:flex-start}.admin-mark{width:40px;height:40px}.stat{padding:14px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 </style></head><body><main>
-<div class="top"><div><div class="muted">TEN TERM • CONTROL PANEL</div><h1>Admin dashboard</h1></div><button id="logout" class="btn secondary hidden">Log out</button></div>
-<section id="login" class="panel"><h2>Admin sign in</h2><form id="loginForm"><label>Email</label><input name="email" type="email" autocomplete="username" required><label>Password</label><input name="password" type="password" autocomplete="current-password" required><p id="loginMsg" class="message"></p><button class="btn">Sign in</button></form></section>
+<div class="top admin-top"><div class="admin-brand"><span class="admin-mark">T</span><div><div class="muted">TEN TERM • MANAGEMENT</div><h1>Admin dashboard</h1><p class="admin-subtitle">Your operations, customers and platform activity.</p></div></div><button id="logout" class="btn secondary hidden">Log out</button></div>
+<section id="login" class="panel admin-login"><div class="admin-login-welcome"><span class="admin-mark large">T</span><div class="admin-kicker">TEN TERM • SECURE ACCESS</div><h2>Welcome back.</h2><p>Manage your platform with clarity and confidence.</p><div class="admin-orbit" aria-hidden="true"></div></div><div class="admin-login-form"><h2>Admin sign in</h2><p class="muted">Sign in to continue to your control panel.</p><form id="loginForm"><label>Email</label><input name="email" type="email" autocomplete="username" required><label>Password</label><input name="password" type="password" autocomplete="current-password" required><p id="loginMsg" class="message"></p><button class="btn">Sign in <span aria-hidden="true">→</span></button></form></div></section>
 <div id="dashboard" class="hidden">
 <section class="panel"><h2>Overview</h2><div id="stats" class="grid"></div></section>
 <section class="panel"><h2>Customer accounts</h2><div id="customers" class="muted">Loading customers…</div></section><section class="panel"><h2>Manage customer plans</h2><p class="muted">All active plans appear on the customer website. You can edit amounts and descriptions or deactivate a plan. Plan display does not take payment or promise earnings; checkout stays disabled until payment verification is tested.</p><form id="planForm"><div class="row"><div><label>Plan name</label><input name="name" required maxlength="60" placeholder="e.g. Starter"></div><div><label>Amount (₦)</label><input name="amount_naira" type="number" min="1" step="0.01" required placeholder="1500"></div></div><label>Description</label><input name="description" maxlength="300" placeholder="Short plan description"><p class="message" id="planMsg"></p><button class="btn">Add plan</button></form><div id="plans" class="plan-grid" style="margin-top:16px">Loading plans…</div></section>
